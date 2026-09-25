@@ -7,37 +7,41 @@ daemon — the store is a file you can read, edit and back up yourself.
 
 The grid rolls rather than paging months: past weeks are gone, not greyed, so
 what you see is the days still in front of you. The furthest week sits back at
-half opacity.
+half opacity. MONTH expands it to the whole month when you want the shape of
+one; the year page always opens a month that way.
 
 ```
 ┌─ Datebook ─────────────────────────────────────────────────┐
 │  ▣  September 26             2026 ────────────────── 73%   │
-│                                        ┌─────────┬───────┐ │
-│                                        │  WEEKS  │ YEAR  │ │
-│         MO    TU    WE    TH    FR    SA    SU   └───────┘ │
+│                                   ┌───────┬───────┬──────┐ │
+│                                   │ WEEKS │ MONTH │ YEAR │ │
+│         MO    TU    WE    TH    FR    SA    SU    └──────┘ │
 │  ───────────────────────────────────────────────────────── │
 │   39 │ 21  │ 22  │ 23  │ 24  │ 25  │[26]·│ 27      ← now   │
 │   40 │ 28 ·│ 29 ··│ 30 │  1  │  2 ·│  3  │  4              │
 │   41 │  5 ·│  6 · │  7 │  8  │  9  │ 10  │ 11      ← faded │
 │  ───────────────────────────────────────────────────────── │
 │  SATURDAY, SEPTEMBER 26                                ┌─┐ │
-│  1 event                                               │+│ │
+│                                                        │+│ │
 │  ───────────────────────────────────────────────────── └─┘ │
 │  Design review                                           ›  │
 │   14:00 – 15:00 · Studio 2                                  │
 │  ───────────────────────────────────────────────────────── │
-│  ‹               SEP – OCT 2026                          ›  │
+│  «  ‹            SEP – OCT 2026                     ›   »   │
 │  ┌──────────────┐ ┌───────┐                                 │
 │  │ + NEW EVENT  │ │ TODAY │                                 │
 │  └──────────────┘ └───────┘                                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
+A day with nothing on it shows its heading and the `+` and stops there — no
+empty band, no count line. The bands below say how many there are.
+
 Four pages, all inside the one popup:
 
 | Page      | Reached by                        | What it is                                        |
 |-----------|-----------------------------------|---------------------------------------------------|
-| `month`   | the default, or WEEKS             | the rolling weeks above, plus the selected day's agenda |
+| `month`   | the default, or WEEKS / MONTH     | the grid above, plus the selected day's agenda      |
 | `year`    | the YEAR half of the switch       | twelve miniatures, a mark per day, events brighter |
 | `detail`  | the chevron on an event           | one event's facts, with edit and delete            |
 | `compose` | `+`, NEW EVENT, or EDIT           | title, date, time, length, place and a repeat      |
@@ -112,15 +116,18 @@ newer in-panel edit.
 |--------------|------------------------------------------------------|
 | Bar          | Left click opens, right click jumps to today, middle click starts a new event |
 | Grid         | Click a day to select it, double click to add one there |
-| `‹` `›`      | Roll the window one week; a day picked outside it re-anchors the grid |
-| WEEKS / YEAR | Switch the grid for twelve months; click a month to open it |
+| `‹` `›`      | Roll the window one week (rolling view only); a day picked outside it re-anchors the grid |
+| WEEKS / MONTH | Roll three weeks, or expand to the whole month      |
+| YEAR         | Twelve miniatures; click a month to open it whole   |
+| `«` `»`      | Page a month, keeping the day of the month where it can |
 | Event band   | Click anywhere on it for the detail page, then EDIT or DELETE |
 | `+` / NEW EVENT | The compose form: title, date, time, minutes, place, repeat |
 
 Keys while the popup has focus: arrows walk days and weeks (months on the year
-page), `Return`/`a` opens the compose form, `t` today, `n`/`p` roll the window a
-week forward and back (a year on the year page), `y` toggles the year page, `o`
-opens `events.json`. `Esc` steps back a page, or closes the popup from the
+page), `Return`/`a` opens the compose form, `t` today, `n`/`p` step the grid — a
+week rolling, a month expanded, a year on the year page — `,`/`.` page a month,
+`m` expands or collapses the grid, `y` toggles the year page, `o` opens
+`events.json`. `Esc` steps back a page, or closes the popup from the
 calendar.
 
 ## Settings
@@ -152,8 +159,10 @@ omarchy-shell datebook add "2026-10-02 09:00 Standup !weekly"
 omarchy-shell datebook list 2026-10-02
 omarchy-shell datebook upcoming 30
 omarchy-shell datebook select 2026-10-02
+omarchy-shell datebook grid month       # weeks | month, or "" to flip
+omarchy-shell datebook showMonth 2027 3 # open a month whole, as the year page does
 omarchy-shell datebook week 1           # roll the window forward a week
-omarchy-shell datebook month 1          # jump to the next month
+omarchy-shell datebook month 1          # jump a month, keeping the day
 omarchy-shell datebook today
 omarchy-shell datebook page year ""          # month | year | detail <id> | compose [id]
 omarchy-shell datebook event 20261002-3f2a   # one event, as the detail page sees it
@@ -166,6 +175,8 @@ omarchy-shell datebook path
 
 ## Where this differs from the mockup
 
+- The day heading **drops the "1 event" line** under it, and an empty day drops
+  its band altogether rather than reading "Nothing planned".
 - The grid **rolls three weeks from the current one** rather than showing a whole
   month — which is what the mockup itself shows (weeks 39, 40, 41), and the
   pager under it moves by a week, not a month.

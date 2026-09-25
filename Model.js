@@ -170,6 +170,16 @@ function monthWeeks(year, month, options) {
   return weeks
 }
 
+// The same day of the month, `delta` months along, clamped to the length of the
+// month it lands in: 31 Jan + 1 month is 28 Feb, not 3 March.
+function addMonthsToISO(iso, delta) {
+  var date = fromISO(iso)
+  if (!date) return iso
+  var moved = addMonths(date.getFullYear(), date.getMonth(), Math.round(delta))
+  var day = Math.min(date.getDate(), daysInMonth(moved.year, moved.month))
+  return toISO(new Date(moved.year, moved.month, day))
+}
+
 // The Monday (or Sunday) that opens the week `iso` falls in.
 function startOfWeek(iso, mondayFirst) {
   var date = fromISO(iso)
@@ -703,6 +713,7 @@ if (typeof module !== "undefined") {
     weekdayPairs: weekdayPairs,
     monthWeeks: monthWeeks,
     startOfWeek: startOfWeek,
+    addMonthsToISO: addMonthsToISO,
     weeksFrom: weeksFrom,
     windowLabel: windowLabel,
     yearMonths: yearMonths,

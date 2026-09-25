@@ -24,7 +24,7 @@
   },
   "barWidget": {
     "displayName": "Datebook",
-    "description": "A rolling three-week calendar with a day agenda, event pages and locally stored events.",
+    "description": "A rolling three-week calendar that expands to a month, with a day agenda and event pages.",
     "category": "Time",
     "allowMultiple": false,
     "defaultSection": "center",

@@ -85,6 +85,28 @@ Item {
   property string anchorISO: Model.startOfWeek(Model.todayISO(), true)
   property string selectedISO: Model.todayISO()
 
+  // "weeks" is the rolling window; "month" expands it to the whole month the
+  // selected day sits in. Not persisted: the popup opens on the window again,
+  // which is the view that answers "what is coming".
+  property string gridMode: "weeks"    // weeks | month
+
+  function setGridMode(mode) {
+    var next = String(mode) === "month" ? "month" : "weeks"
+    gridMode = next
+    // Leaving the month view, re-anchor on the selected day so the window opens
+    // where the eye already is rather than back on today.
+    if (next === "weeks") showWeekOf(selectedISO)
+    return next
+  }
+
+  function toggleGridMode() { return setGridMode(gridMode === "month" ? "weeks" : "month") }
+
+  // What the year page does: open a month in full, not as a rolling window.
+  function openMonth(year, month) {
+    gridMode = "month"
+    showMonth(year, month)
+  }
+
   readonly property string windowEndISO: Model.shiftISO(anchorISO, weeksShown * 7 - 1)
 
   // The masthead, the year page and the meter all follow the selected day.
@@ -134,9 +156,10 @@ Item {
     select(Model.toISO(new Date(year, month, 1)))
   }
 
+  // Keeps the day of the month where it can, so paging months from the 26th
+  // lands on the 26th rather than snapping to the 1st.
   function stepMonth(delta) {
-    var next = Model.addMonths(viewYear, viewMonth, delta)
-    showMonth(next.year, next.month)
+    select(Model.addMonthsToISO(selectedISO, delta))
   }
 
   function select(iso) {
@@ -160,20 +183,30 @@ Item {
   property string lastError: ""
 
   readonly property var windowCounts: Model.countsInRange(events, anchorISO, weeksShown * 7)
+  readonly property var monthCounts: Model.countsForMonth(events, viewYear, viewMonth)
   readonly property var yearCounts: Model.countsInRange(events, viewYear + "-01-01", 366)
   readonly property var selectedEvents: Model.eventsOn(events, selectedISO)
   readonly property var todayEvents: Model.eventsOn(events, todayISO)
   readonly property var upcomingEvents: Model.upcoming(events, todayISO, upcomingDays)
   readonly property var next: Model.nextOccurrence(events, todayISO, nowMinutes)
 
-  readonly property var weeks: Model.weeksFrom(anchorISO, weeksShown, {
-    mondayFirst: weekStartsMonday,
-    todayISO: todayISO,
-    counts: windowCounts
-  })
+  readonly property var weeks: gridMode === "month"
+    ? Model.monthWeeks(viewYear, viewMonth, {
+        mondayFirst: weekStartsMonday,
+        showAdjacentMonths: true,
+        todayISO: todayISO,
+        counts: monthCounts
+      })
+    : Model.weeksFrom(anchorISO, weeksShown, {
+        mondayFirst: weekStartsMonday,
+        todayISO: todayISO,
+        counts: windowCounts
+      })
 
-  // "SEPTEMBER 2026", or "SEP – OCT 2026" once the window straddles two.
-  readonly property string windowLabel: Model.windowLabel(anchorISO, windowEndISO)
+  // "SEPTEMBER 2026" for a month, or "SEP – OCT 2026" once a window straddles two.
+  readonly property string gridLabel: gridMode === "month"
+    ? Model.upperMonth(viewYear, viewMonth)
+    : Model.windowLabel(anchorISO, windowEndISO)
 
   readonly property var yearMonths: Model.yearMonths(viewYear, {
     mondayFirst: weekStartsMonday,
@@ -339,6 +372,7 @@ Item {
       return JSON.stringify({
         today: root.todayISO,
         selected: root.selectedISO,
+        grid: root.gridMode,
         window: root.anchorISO + ".." + root.windowEndISO,
         view: root.viewYear + "-" + Model.pad2(root.viewMonth + 1),
         loaded: root.loaded,
@@ -375,6 +409,19 @@ Item {
       var n = parseInt(delta, 10)
       root.stepMonth(isFinite(n) ? n : 0)
       return root.viewYear + "-" + Model.pad2(root.viewMonth + 1)
+    }
+
+    // Opens a month whole, the way clicking one on the year page does.
+    function showMonth(year: string, month: string): string {
+      var y = parseInt(year, 10), m = parseInt(month, 10)
+      if (!isFinite(y) || !isFinite(m) || m < 1 || m > 12) return "expected <year> <1-12>"
+      root.openMonth(y, m - 1)
+      return root.gridMode + " " + root.viewYear + "-" + Model.pad2(root.viewMonth + 1)
+    }
+
+    // weeks | month, or nothing to flip between them.
+    function grid(mode: string): string {
+      return mode === "" ? root.toggleGridMode() : root.setGridMode(mode)
     }
 
     // Rolls the grid by whole weeks, which is what the pager under it does.

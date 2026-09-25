@@ -70,7 +70,8 @@ Panel {
   readonly property int viewYear: book ? book.viewYear : new Date().getFullYear()
   readonly property int viewMonth: book ? book.viewMonth : new Date().getMonth()
   readonly property var weeks: book ? book.weeks : []
-  readonly property string windowLabel: book ? book.windowLabel : ""
+  readonly property string gridLabel: book ? book.gridLabel : ""
+  readonly property string gridMode: book ? book.gridMode : "weeks"
   readonly property var yearMonths: book ? book.yearMonths : []
   readonly property var dayEvents: book ? book.selectedEvents : []
   readonly property int todayCount: book ? book.todayEvents.length : 0
@@ -124,6 +125,9 @@ Panel {
   function stepMonth(delta) { if (book) book.stepMonth(delta) }
   function stepWeeks(delta) { if (book) book.stepWeeks(delta) }
   function stepYear(delta) { if (book) book.stepYear(delta) }
+  function setGridMode(mode) { if (book) book.setGridMode(mode) }
+  // The pager's inner arrows move by whatever the grid is showing.
+  function stepGrid(delta) { gridMode === "month" ? stepMonth(delta) : stepWeeks(delta) }
   function selectDay(iso) { if (book) book.select(iso) }
   function goToday() { if (book) book.goToday() }
   function stepDay(delta) { if (book) book.select(Model.shiftISO(selectedISO, delta)) }
@@ -221,8 +225,11 @@ Panel {
         if (!root.onCalendar) return
         var key = String(text).toLowerCase()
         if (key === "t") root.goToday()
-        else if (key === "n" || key === "]") root.page === "year" ? root.stepYear(1) : root.stepWeeks(1)
-        else if (key === "p" || key === "[") root.page === "year" ? root.stepYear(-1) : root.stepWeeks(-1)
+        else if (key === "n" || key === "]") root.page === "year" ? root.stepYear(1) : root.stepGrid(1)
+        else if (key === "p" || key === "[") root.page === "year" ? root.stepYear(-1) : root.stepGrid(-1)
+        else if (key === "m") { if (root.book) root.book.toggleGridMode() }
+        else if (key === ">" || key === ".") root.stepMonth(1)
+        else if (key === "<" || key === ",") root.stepMonth(-1)
         else if (key === "y") root.showPage(root.page === "year" ? "month" : "year", "")
         else if (key === "a") root.startCompose("")
         else if (key === "o") root.openFile()
@@ -245,9 +252,17 @@ Panel {
           trailingControl: Component {
             SegmentedToggle {
               chrome: tokens
-              current: root.page === "year" ? "year" : "weeks"
-              options: [{ key: "weeks", label: "WEEKS" }, { key: "year", label: "YEAR" }]
-              onPicked: function(key) { root.showPage(key === "year" ? "year" : "month", "") }
+              current: root.page === "year" ? "year" : root.gridMode
+              options: [
+                { key: "weeks", label: "WEEKS" },
+                { key: "month", label: "MONTH" },
+                { key: "year", label: "YEAR" }
+              ]
+              onPicked: function(key) {
+                if (key === "year") { root.showPage("year", ""); return }
+                root.setGridMode(key)
+                root.showPage("month", "")
+              }
             }
           }
         }
@@ -325,6 +340,8 @@ Panel {
         chrome: tokens
         weeks: root.weeks
         selectedISO: root.selectedISO
+        // A month's last row is part of the month, not the far end of a window.
+        fadeLastWeek: root.gridMode === "weeks"
         onDaySelected: function(iso) { root.selectDay(iso) }
         onDayActivated: function(iso) { root.selectDay(iso); root.startCompose("") }
       }
@@ -340,26 +357,16 @@ Panel {
         width: parent.width
         height: Math.max(dayHeading.implicitHeight, addButton.height)
 
-        Column {
+        // The count line is gone: the bands below already say how many there are.
+        Text {
           id: dayHeading
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
-          spacing: Style.space(9)
-
-          Text {
-            text: Model.dayHeading(root.selectedISO)
-            color: tokens.dim
-            font.family: tokens.fontFamily
-            font.pixelSize: tokens.labelSize
-            font.letterSpacing: tokens.trackedSpacing
-          }
-
-          Text {
-            text: Model.countLabel(root.dayEvents.length)
-            color: tokens.headline
-            font.family: tokens.displayFamily
-            font.pixelSize: tokens.sectionSize
-          }
+          text: Model.dayHeading(root.selectedISO)
+          color: tokens.dim
+          font.family: tokens.fontFamily
+          font.pixelSize: tokens.labelSize
+          font.letterSpacing: tokens.trackedSpacing
         }
 
         OutlineButton {
@@ -372,39 +379,18 @@ Panel {
         }
       }
 
-      Item { width: 1; height: Style.space(25) }
+      Item { width: 1; height: root.dayEvents.length > 0 ? Style.space(25) : 0 }
 
       // --- the agenda ------------------------------------------------------
+      // A day with nothing on it shows nothing at all: an empty band is just
+      // dead space between the grid and the pager.
       Column {
         width: parent.width
         spacing: 0
+        visible: root.dayEvents.length > 0
+        height: visible ? implicitHeight : 0
 
         Rectangle { width: parent.width; height: 1; color: tokens.rule }
-
-        // An empty day still reads as a band, so the page does not jump when
-        // the last event of a day is deleted.
-        Item {
-          width: parent.width
-          height: tokens.eventRow
-          visible: root.dayEvents.length === 0
-
-          Text {
-            anchors.left: parent.left
-            anchors.leftMargin: Style.space(13)
-            anchors.verticalCenter: parent.verticalCenter
-            text: "Nothing planned"
-            color: tokens.dimmer
-            font.family: tokens.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          Rectangle {
-            anchors.bottom: parent.bottom
-            width: parent.width
-            height: 1
-            color: tokens.rule
-          }
-        }
 
         // Four bands is as tall as the agenda gets; a busier day scrolls.
         Flickable {
@@ -437,56 +423,61 @@ Panel {
 
       Item { width: 1; height: Style.space(30) }
 
-      // --- month pager -----------------------------------------------------
+      // --- pager -----------------------------------------------------------
+      // Outer arrows jump a month, inner ones step whatever the grid shows —
+      // a week on the rolling window, a month when it is expanded.
       Item {
         width: parent.width
         height: Style.space(30)
 
-        Text {
-          id: prevMonth
+        Row {
           anchors.left: parent.left
-          anchors.leftMargin: Style.space(12)
+          anchors.leftMargin: Style.space(8)
           anchors.verticalCenter: parent.verticalCenter
-          text: "\u{F0141}"                          // chevron-left
-          color: prevMouse.containsMouse ? tokens.headline : tokens.dim
-          font.family: tokens.glyphFamily
-          font.pixelSize: Style.font.icon
+          spacing: Style.space(2)
 
-          MouseArea {
-            id: prevMouse
-            anchors.fill: parent
-            anchors.margins: -Style.space(10)
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.stepWeeks(-1)
+          PagerArrow {
+            chrome: tokens
+            glyph: "\u{F013D}"                        // chevron-double-left
+            strong: true
+            onClicked: root.stepMonth(-1)
+          }
+
+          PagerArrow {
+            chrome: tokens
+            glyph: "\u{F0141}"                        // chevron-left
+            visible: root.gridMode === "weeks"
+            onClicked: root.stepGrid(-1)
           }
         }
 
         Text {
           anchors.centerIn: parent
-          text: root.windowLabel
+          text: root.gridLabel
           color: tokens.dim
           font.family: tokens.fontFamily
           font.pixelSize: tokens.labelSize
           font.letterSpacing: tokens.trackedSpacing
         }
 
-        Text {
+        Row {
           anchors.right: parent.right
-          anchors.rightMargin: Style.space(12)
+          anchors.rightMargin: Style.space(8)
           anchors.verticalCenter: parent.verticalCenter
-          text: "\u{F0142}"                          // chevron-right
-          color: nextMouse.containsMouse ? tokens.headline : tokens.dim
-          font.family: tokens.glyphFamily
-          font.pixelSize: Style.font.icon
+          spacing: Style.space(2)
 
-          MouseArea {
-            id: nextMouse
-            anchors.fill: parent
-            anchors.margins: -Style.space(10)
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.stepWeeks(1)
+          PagerArrow {
+            chrome: tokens
+            glyph: "\u{F0142}"                        // chevron-right
+            visible: root.gridMode === "weeks"
+            onClicked: root.stepGrid(1)
+          }
+
+          PagerArrow {
+            chrome: tokens
+            glyph: "\u{F013E}"                        // chevron-double-right
+            strong: true
+            onClicked: root.stepMonth(1)
           }
         }
       }
@@ -526,7 +517,8 @@ Panel {
         currentMonth: root.viewMonth
         todayMonth: root.todayMonth
         onMonthPicked: function(month) {
-          if (root.book) root.book.showMonth(root.viewYear, month)
+          // From the year, a month opens whole rather than as a three-week window.
+          if (root.book) root.book.openMonth(root.viewYear, month)
           root.showPage("month", "")
         }
       }
