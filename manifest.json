@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "id": "datebook",
+  "name": "Datebook",
+  "version": "0.1.0",
+  "author": "andre",
+  "license": "MIT",
+  "description": "A calendar in the Omarchy bar: month view with ISO weeks, a day agenda, and your own events kept in a plain JSON file. No accounts, no network.",
+  "keywords": [
+    "calendar",
+    "events",
+    "agenda",
+    "month",
+    "dates",
+    "time"
+  ],
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Datebook",
+    "description": "Month calendar with a day agenda and locally stored events.",
+    "category": "Time",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "barMode": "next",
+      "barIcon": "calendar",
+      "barMaxTitle": 18,
+      "weekStartsMonday": true,
+      "showWeekNumbers": true,
+      "showAdjacentMonths": true,
+      "use24Hour": true,
+      "upcomingDays": 14
+    },
+    "schema": [
+      {
+        "key": "barMode",
+        "type": "enum",
+        "label": "Bar shows",
+        "options": [
+          "next",
+          "date",
+          "count",
+          "icon"
+        ],
+        "defaultValue": "next"
+      },
+      {
+        "key": "barIcon",
+        "type": "enum",
+        "label": "Bar icon",
+        "options": [
+          "calendar",
+          "month",
+          "today",
+          "blank",
+          "clock",
+          "none"
+        ],
+        "defaultValue": "calendar"
+      },
+      {
+        "key": "barMaxTitle",
+        "type": "integer",
+        "label": "Longest event title in the bar (characters)",
+        "min": 6,
+        "max": 48,
+        "step": 1,
+        "defaultValue": 18
+      },
+      {
+        "key": "weekStartsMonday",
+        "type": "boolean",
+        "label": "Week starts on Monday",
+        "defaultValue": true
+      },
+      {
+        "key": "showWeekNumbers",
+        "type": "boolean",
+        "label": "Show ISO week numbers",
+        "defaultValue": true
+      },
+      {
+        "key": "showAdjacentMonths",
+        "type": "boolean",
+        "label": "Show days from the neighbouring months",
+        "defaultValue": true
+      },
+      {
+        "key": "use24Hour",
+        "type": "boolean",
+        "label": "24-hour times",
+        "defaultValue": true
+      },
+      {
+        "key": "upcomingDays",
+        "type": "integer",
+        "label": "Days ahead the upcoming list covers",
+        "min": 1,
+        "max": 90,
+        "step": 1,
+        "defaultValue": 14
+      }
+    ]
+  }
+}
