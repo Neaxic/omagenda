@@ -1,143 +1,162 @@
 import QtQuick
 import qs.Commons
 
-// The month grid: a weekday header plus one cell per day, driven entirely by the
-// flat cell list Model.monthCells() builds. It does no date arithmetic of its
-// own — a cell already knows whether it is today, in the month, a weekend, and
-// how many events it holds.
+// The month grid from the mockup: a week-number gutter, seven columns, hairline
+// rules between rows and columns, day numbers set left and centred in their row,
+// event dots at the bottom-left and a today dot at the top-right. Nothing here
+// does date arithmetic — Model.monthWeeks() hands it finished rows.
 Column {
   id: root
 
-  // Cells from Model.monthCells(), and the labels from Model.weekdayLabels().
-  property var cells: []
-  property var weekdayLabels: []
-  property bool showWeekNumbers: true
+  property var chrome: null
+  property var weeks: []            // Model.monthWeeks()
   property string selectedISO: ""
 
-  property color foreground: Color.foreground
-  property color accent: Color.accent
-  property color dim: Qt.darker(foreground, 1.55)
-  property color hairline: Style.normalBorderFor(foreground, accent, Color.urgent)
-  property string fontFamily: Style.font.family
-
   signal daySelected(string iso)
+  signal dayActivated(string iso)   // double click: straight into the day
 
-  readonly property int columns: showWeekNumbers ? 8 : 7
-  readonly property real gap: Style.space(2)
-  readonly property real cellWidth: (width - gap * (columns - 1)) / columns
-  readonly property real cellHeight: Math.max(Style.space(26), cellWidth * 0.82)
+  readonly property real gutterWidth: chrome ? chrome.gutter : 33
+  readonly property real cellWidth: (width - gutterWidth) / 7
+  readonly property real rowHeight: chrome ? chrome.rowHeight : 63
 
-  spacing: Style.space(4)
+  spacing: 0
 
-  // --- weekday header ---------------------------------------------------------
-  Row {
+  // The grid's top rule reads a touch stronger than the rules inside it.
+  Rectangle {
     width: parent.width
-    spacing: root.gap
-
-    // Keeps the header aligned with the grid when a week column is present.
-    Item {
-      visible: root.showWeekNumbers
-      width: root.showWeekNumbers ? root.cellWidth : 0
-      height: Style.space(14)
-    }
-
-    Repeater {
-      model: root.weekdayLabels
-      delegate: Text {
-        required property var modelData
-        required property int index
-        width: root.cellWidth
-        height: Style.space(14)
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        text: String(modelData)
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-      }
-    }
+    height: 1
+    color: root.chrome ? root.chrome.rule : "transparent"
   }
 
-  // --- days -------------------------------------------------------------------
-  Grid {
-    width: parent.width
-    columns: root.columns
-    spacing: root.gap
+  Repeater {
+    model: root.weeks
 
-    Repeater {
-      model: root.cells
+    delegate: Item {
+      id: weekRow
+      required property var modelData
+      required property int index
+      readonly property var week: modelData
 
-      delegate: Item {
-        required property var modelData
-        // Aliased: the dot Repeater below shadows `modelData` with its own.
-        readonly property var cell: modelData
-        readonly property bool isDay: cell.kind === "day"
-        readonly property bool selected: isDay && cell.iso === root.selectedISO
+      width: root.width
+      height: root.rowHeight
 
-        width: root.cellWidth
-        height: root.cellHeight
+      // Row separators sit at the top of every row but the first, so the grid
+      // keeps an open bottom edge the way the mockup does.
+      Rectangle {
+        width: parent.width
+        height: 1
+        visible: weekRow.index > 0
+        color: root.chrome ? root.chrome.hairline : "transparent"
+      }
 
-        // Week number: no fill, no hit area, just a quiet marker in the gutter.
-        Text {
-          anchors.centerIn: parent
-          visible: cell.kind === "week"
-          text: cell.week > 0 ? String(cell.week) : ""
-          color: root.dim
-          opacity: 0.7
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
+      Text {
+        x: 0
+        width: root.gutterWidth
+        height: parent.height
+        verticalAlignment: Text.AlignVCenter
+        text: weekRow.week.week > 0 ? String(weekRow.week.week) : ""
+        color: root.chrome ? root.chrome.faint : "transparent"
+        font.family: root.chrome ? root.chrome.fontFamily : "monospace"
+        font.pixelSize: root.chrome ? root.chrome.labelSize : 10
+      }
 
-        Rectangle {
-          anchors.fill: parent
-          visible: parent.isDay
-          radius: Style.space(4)
-          color: parent.selected
-            ? Style.selectedFillFor(root.foreground, root.accent, Color.urgent)
-            : (dayMouse.containsMouse ? Style.hoverFillFor(root.foreground, root.accent, Color.urgent) : "transparent")
-          // Today is a ring, so it stays visible under the selected fill.
-          border.width: cell.today ? Math.max(1, Style.space(1)) : 0
-          border.color: root.accent
+      Row {
+        x: root.gutterWidth
+        height: parent.height
+        spacing: 0
 
-          Column {
-            anchors.centerIn: parent
-            spacing: Style.space(2)
+        Repeater {
+          model: weekRow.week.days
 
-            Text {
-              anchors.horizontalCenter: parent.horizontalCenter
-              text: cell.day > 0 ? String(cell.day) : ""
-              color: cell.today ? root.accent : root.foreground
-              opacity: cell.inMonth ? (cell.weekend ? 0.75 : 1.0) : 0.35
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              font.bold: cell.today
+          delegate: Item {
+            id: dayCell
+            required property var modelData
+            readonly property var day: modelData
+            readonly property bool real: day.iso !== ""
+            readonly property bool selected: real && day.iso === root.selectedISO
+
+            width: root.cellWidth
+            height: root.rowHeight
+
+            // The column rule, drawn on the left edge of every column.
+            Rectangle {
+              width: 1
+              height: parent.height
+              color: root.chrome ? root.chrome.hairline : "transparent"
             }
 
-            // Up to three dots; a fourth event just keeps the third dot.
+            Rectangle {
+              anchors.fill: parent
+              color: dayCell.selected
+                ? (root.chrome ? root.chrome.fill : "transparent")
+                : (cellMouse.containsMouse && dayCell.real
+                   ? (root.chrome ? root.chrome.hoverFill : "transparent")
+                   : "transparent")
+              border.width: dayCell.selected ? 1 : 0
+              border.color: root.chrome ? root.chrome.strongEdge : "transparent"
+            }
+
+            Text {
+              x: root.chrome ? root.chrome.cellPad : 12
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.verticalCenterOffset: dayCell.day.count > 0 ? -Style.space(5) : 0
+              visible: dayCell.real
+              text: dayCell.real ? String(dayCell.day.day) : ""
+              color: {
+                if (!root.chrome) return "transparent"
+                if (dayCell.selected) return root.chrome.headline
+                if (!dayCell.day.inMonth) return root.chrome.faint
+                return root.chrome.body
+              }
+              font.family: root.chrome ? root.chrome.fontFamily : "monospace"
+              font.pixelSize: Style.font.title
+              font.bold: dayCell.selected
+            }
+
+            // Event dots, bottom left. Three is the ceiling; a fourth event just
+            // keeps the third dot rather than crowding the cell.
             Row {
-              anchors.horizontalCenter: parent.horizontalCenter
-              spacing: Style.space(2)
-              height: Style.space(3)
+              x: root.chrome ? root.chrome.cellPad : 12
+              anchors.bottom: parent.bottom
+              anchors.bottomMargin: Style.space(16)
+              spacing: Style.space(4)
 
               Repeater {
-                model: Math.min(3, cell.count)
+                model: Math.min(3, dayCell.day.count)
+
                 delegate: Rectangle {
-                  width: Style.space(3)
+                  width: root.chrome ? root.chrome.dot : 4
                   height: width
                   radius: width / 2
-                  color: root.accent
-                  opacity: cell.inMonth ? 0.9 : 0.4
+                  color: root.chrome ? root.chrome.body : "transparent"
+                  opacity: dayCell.day.inMonth ? 1.0 : 0.45
                 }
               }
             }
-          }
 
-          MouseArea {
-            id: dayMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.daySelected(cell.iso)
+            // Today: a filled square at the top right, kept even under the
+            // selection outline so "today" and "selected" stay distinguishable.
+            Rectangle {
+              visible: dayCell.day.today
+              width: root.chrome ? root.chrome.todayDot : 6
+              height: width
+              radius: width / 2
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.rightMargin: Style.space(13)
+              anchors.topMargin: Style.space(13)
+              color: root.chrome ? root.chrome.headline : "transparent"
+            }
+
+            MouseArea {
+              id: cellMouse
+              anchors.fill: parent
+              enabled: dayCell.real
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.daySelected(dayCell.day.iso)
+              onDoubleClicked: root.dayActivated(dayCell.day.iso)
+            }
           }
         }
       }

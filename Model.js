@@ -13,6 +13,14 @@ var MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 // Sunday-first, the order Date.getDay() uses.
 var WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 var WEEKDAY_INITIAL = ["S", "M", "T", "W", "T", "F", "S"]
+// The mockup's header row: two letters, upper case.
+var WEEKDAY_PAIR = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+var WEEKDAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+// Headline faces to try, in order, before falling back to the theme font. The
+// mockup is set in a tight grotesque, which no monospace can stand in for.
+var DISPLAY_FAMILIES = ["Inter", "Inter Display", "InterVariable", "Archivo", "Helvetica Neue",
+                        "Neue Haas Grotesk Display Pro", "SF Pro Display", "Noto Sans", "Liberation Sans"]
 
 var REPEATS = ["none", "daily", "weekly", "monthly", "yearly"]
 var REPEAT_LABELS = {
@@ -102,16 +110,21 @@ function weekdayLabels(mondayFirst) {
   return mondayFirst ? base.slice(1).concat(base.slice(0, 1)) : base.slice(0)
 }
 
+function weekdayPairs(mondayFirst) {
+  var base = WEEKDAY_PAIR
+  return mondayFirst ? base.slice(1).concat(base.slice(0, 1)) : base.slice(0)
+}
+
 // ------------------------------------------------------------------ the grid
 
-// A flat cell list for a Grid of 7 columns (8 with week numbers). Cells carry
-// everything the delegate needs so the QML side never does date arithmetic:
-//   { kind: "week" | "day" | "blank", iso, day, inMonth, today, weekend, week, count }
+// One row per week: { week: 39, days: [cell x7] }, which is how the grid draws
+// (a week-number gutter, then seven cells). A cell carries everything the
+// delegate needs so no date arithmetic happens in QML:
+//   { iso, day, inMonth, today, weekend, count }
 // `counts` is an iso -> number map (see countsInRange); omit it for a bare grid.
-function monthCells(year, month, options) {
+function monthWeeks(year, month, options) {
   var o = options || {}
   var mondayFirst = o.mondayFirst !== false
-  var withWeeks = o.showWeekNumbers !== false
   var withAdjacent = o.showAdjacentMonths !== false
   var today = o.todayISO || todayISO()
   var counts = o.counts || {}
@@ -122,45 +135,72 @@ function monthCells(year, month, options) {
   var lead = mondayFirst ? (firstDow + 6) % 7 : firstDow
   var rows = Math.ceil((lead + total) / 7)
 
-  var cells = []
+  var weeks = []
   for (var r = 0; r < rows; r++) {
-    if (withWeeks) {
-      // Anchor the number on a real day of this month in the row: the first row
-      // can open with days from the previous month, whose week may differ.
-      var anchor = null
-      for (var c = 0; c < 7; c++) {
-        var n = r * 7 + c - lead + 1
-        if (n >= 1 && n <= total) { anchor = n; break }
-      }
-      cells.push({
-        kind: "week", iso: "", day: 0, inMonth: false, today: false, weekend: false,
-        week: anchor === null ? 0 : isoWeek(new Date(year, month, anchor)), count: 0
-      })
-    }
+    var days = []
+    // Anchor the week number on a real day of this month in the row: the first
+    // row can open with days from the previous month, whose week may differ.
+    var anchor = null
+    for (var c = 0; c < 7; c++) {
+      var n = r * 7 + c - lead + 1
+      if (anchor === null && n >= 1 && n <= total) anchor = n
 
-    for (var col = 0; col < 7; col++) {
-      var dayNum = r * 7 + col - lead + 1
-      var inMonth = dayNum >= 1 && dayNum <= total
+      var inMonth = n >= 1 && n <= total
       if (!inMonth && !withAdjacent) {
-        cells.push({ kind: "blank", iso: "", day: 0, inMonth: false, today: false, weekend: false, week: 0, count: 0 })
+        days.push({ iso: "", day: 0, inMonth: false, today: false, weekend: false, count: 0 })
         continue
       }
-      var date = new Date(year, month, dayNum)   // rolls into the neighbour month
+      var date = new Date(year, month, n)   // rolls into the neighbouring month
       var iso = toISO(date)
       var dow = date.getDay()
-      cells.push({
-        kind: "day",
+      days.push({
         iso: iso,
         day: date.getDate(),
         inMonth: inMonth,
         today: iso === today,
         weekend: dow === 0 || dow === 6,
-        week: 0,
         count: counts[iso] || 0
       })
     }
+    weeks.push({
+      week: anchor === null ? 0 : isoWeek(new Date(year, month, anchor)),
+      days: days
+    })
   }
-  return cells
+  return weeks
+}
+
+// The year view: twelve months, each with its own weeks, for the mini grids.
+function yearMonths(year, options) {
+  var months = []
+  for (var m = 0; m < 12; m++) {
+    months.push({
+      month: m,
+      name: MONTH_NAMES[m],
+      short: MONTH_SHORT[m],
+      weeks: monthWeeks(year, m, {
+        mondayFirst: (options || {}).mondayFirst !== false,
+        showAdjacentMonths: false,
+        todayISO: (options || {}).todayISO,
+        counts: (options || {}).counts || {}
+      })
+    })
+  }
+  return months
+}
+
+// How far through the year `todayIso` stands, as 0..1. A year already over
+// reads 1, one not yet begun reads 0, so the meter is honest while browsing.
+function yearProgress(year, todayIso) {
+  var today = fromISO(todayIso || todayISO())
+  if (!today) return 0
+  if (today.getFullYear() > year) return 1
+  if (today.getFullYear() < year) return 0
+  var startOfYear = new Date(year, 0, 1)
+  var days = Math.round((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+                       - Date.UTC(year, 0, 1)) / 86400000)
+  var total = (new Date(year, 11, 31).getTime() - startOfYear.getTime()) / 86400000 + 1
+  return Math.max(0, Math.min(1, days / total))
 }
 
 // ------------------------------------------------------------------- events
@@ -201,6 +241,7 @@ function normalizeEvent(raw) {
     time: normalizeTime(raw.time),
     durationMin: Math.max(0, Math.round(Number(raw.durationMin) || 0)),
     notes: trim(raw.notes),
+    location: trim(raw.location),
     repeat: normalizeRepeat(raw.repeat),
     // "" = forever. Only meaningful with a repeat.
     until: isISODate(raw.until) && fromISO(raw.until) ? trim(raw.until) : ""
@@ -225,8 +266,8 @@ function ensureIds(events, randomFn) {
     while (id === "" || seen[id]) id = newId(e.date, randomFn)
     seen[id] = true
     out.push({
-      id: id, title: e.title, date: e.date, time: e.time,
-      durationMin: e.durationMin, notes: e.notes, repeat: e.repeat, until: e.until
+      id: id, title: e.title, date: e.date, time: e.time, durationMin: e.durationMin,
+      notes: e.notes, location: e.location, repeat: e.repeat, until: e.until
     })
   }
   return out
@@ -262,6 +303,7 @@ function serializeStore(events) {
     if (e.time !== "") out.time = e.time
     if (e.durationMin > 0) out.durationMin = e.durationMin
     if (e.notes !== "") out.notes = e.notes
+    if (e.location !== "") out.location = e.location
     if (e.repeat !== "none") out.repeat = e.repeat
     if (e.until !== "") out.until = e.until
     list.push(out)
@@ -322,7 +364,8 @@ function eventsOn(events, iso) {
     var e = events[i]
     out.push({
       id: e.id, title: e.title, date: e.date, iso: iso, time: e.time,
-      durationMin: e.durationMin, notes: e.notes, repeat: e.repeat, until: e.until,
+      durationMin: e.durationMin, notes: e.notes, location: e.location,
+      repeat: e.repeat, until: e.until,
       recurring: e.repeat !== "none" && e.date !== iso
     })
   }
@@ -514,11 +557,69 @@ function tooltipText(options) {
   return lines.join("\n")
 }
 
+// "15:00" from a start and a length; "" when either is missing.
+function endTime(time, durationMin) {
+  var start = minutesOfDay(time)
+  var length = Math.round(Number(durationMin) || 0)
+  if (start < 0 || length <= 0) return ""
+  var end = (start + length) % 1440
+  return pad2(Math.floor(end / 60)) + ":" + pad2(end % 60)
+}
+
+// "14:00 – 15:00", "14:00", or "All day" — the event card's time line.
+function timeRange(occurrence, use24) {
+  if (!occurrence) return ""
+  var start = formatTime(occurrence.time, use24)
+  if (start === "") return "All day"
+  var end = formatTime(endTime(occurrence.time, occurrence.durationMin), use24)
+  return end === "" ? start : start + " – " + end
+}
+
+// "SATURDAY, SEPTEMBER 26" — the day heading over the agenda.
+function dayHeading(iso) {
+  var date = fromISO(iso)
+  if (!date) return ""
+  return (WEEKDAY_LONG[date.getDay()] + ", " + MONTH_NAMES[date.getMonth()] + " " + date.getDate()).toUpperCase()
+}
+
+// "SEPTEMBER 2026" — the footer's month label.
+function upperMonth(year, month) {
+  return (MONTH_NAMES[month] + " " + year).toUpperCase()
+}
+
+// "No events" / "1 event" / "3 events".
+function countLabel(n) {
+  var count = Math.max(0, Math.round(Number(n) || 0))
+  if (count === 0) return "No events"
+  return count + (count === 1 ? " event" : " events")
+}
+
+// Percent, for the year meter's label.
+function percentLabel(fraction) {
+  return Math.round(Math.max(0, Math.min(1, Number(fraction) || 0)) * 100) + "%"
+}
+
+// The headline face: the first of `preferred` that is actually installed, else
+// the theme's family. Qt.fontFamilies() is passed in so this stays pure.
+function pickFamily(available, preferred, fallback) {
+  var list = available || []
+  var wanted = preferred || DISPLAY_FAMILIES
+  var have = {}
+  for (var i = 0; i < list.length; i++) have[String(list[i]).toLowerCase()] = String(list[i])
+  for (var j = 0; j < wanted.length; j++) {
+    var hit = have[String(wanted[j]).toLowerCase()]
+    if (hit) return hit
+  }
+  return fallback || ""
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     MONTH_NAMES: MONTH_NAMES,
     MONTH_SHORT: MONTH_SHORT,
     WEEKDAY_SHORT: WEEKDAY_SHORT,
+    WEEKDAY_LONG: WEEKDAY_LONG,
+    DISPLAY_FAMILIES: DISPLAY_FAMILIES,
     REPEATS: REPEATS,
     REPEAT_LABELS: REPEAT_LABELS,
     BAR_MODES: BAR_MODES,
@@ -536,7 +637,10 @@ if (typeof module !== "undefined") {
     addMonths: addMonths,
     monthTitle: monthTitle,
     weekdayLabels: weekdayLabels,
-    monthCells: monthCells,
+    weekdayPairs: weekdayPairs,
+    monthWeeks: monthWeeks,
+    yearMonths: yearMonths,
+    yearProgress: yearProgress,
     normalizeTime: normalizeTime,
     minutesOfDay: minutesOfDay,
     normalizeRepeat: normalizeRepeat,
@@ -556,6 +660,13 @@ if (typeof module !== "undefined") {
     nextOccurrence: nextOccurrence,
     parseAddInput: parseAddInput,
     formatTime: formatTime,
+    endTime: endTime,
+    timeRange: timeRange,
+    dayHeading: dayHeading,
+    upperMonth: upperMonth,
+    countLabel: countLabel,
+    percentLabel: percentLabel,
+    pickFamily: pickFamily,
     relativeDay: relativeDay,
     relativeDayOrDate: relativeDayOrDate,
     formatDayLong: formatDayLong,

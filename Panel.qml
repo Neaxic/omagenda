@@ -4,10 +4,12 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Datebook: a month calendar in the bar. UI only — the event file, the clock and
-// the shared month/day selection live in Service.qml, the date maths in Model.js.
-// One of these exists per monitor; both read the same service instance, so what
-// you page or select on one screen is what the other shows.
+// Datebook's popup, built to the mockup: a masthead with the month set large and
+// a year meter, a hairline month grid with a week gutter, the selected day's
+// agenda, and a footer that pages the months. WEEKS/YEAR switches the grid for
+// twelve miniatures; an event opens a detail page; + and NEW EVENT open the
+// compose page. The store, the clock and the shared selection live in
+// Service.qml, the date maths in Model.js.
 Panel {
   id: root
   moduleName: "datebook"
@@ -20,10 +22,29 @@ Panel {
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color accent: Color.accent
-  readonly property color dim: Qt.darker(foreground, 1.55)
-  readonly property color hairline: Style.normalBorderFor(foreground, accent, urgent)
-  readonly property color hoverFill: Style.hoverFillFor(foreground, accent, urgent)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+
+  // The mockup's headline is a tight grotesque, which no monospace stands in for,
+  // so the first installed face from Model.DISPLAY_FAMILIES wins unless the user
+  // names one (or "theme" to keep the bar's own font).
+  readonly property string displayFamily: {
+    var wanted = String(setting("displayFont", "auto"))
+    if (wanted === "theme") return fontFamily
+    if (wanted !== "" && wanted !== "auto") return wanted
+    return Model.pickFamily(Qt.fontFamilies(), Model.DISPLAY_FAMILIES, fontFamily)
+  }
+
+  Chrome {
+    id: tokens
+    foreground: root.foreground
+    accent: root.accent
+    urgent: root.urgent
+    // The mockup sets everything in one grotesque; only the Nerd Font glyphs
+    // stay on the bar's monospace, which is the only face that carries them.
+    fontFamily: root.displayFamily
+    displayFamily: root.displayFamily
+    glyphFamily: root.fontFamily
+  }
 
   // --- service ------------------------------------------------------------------
   property var book: null
@@ -48,31 +69,54 @@ Panel {
   readonly property string selectedISO: book ? book.selectedISO : todayISO
   readonly property int viewYear: book ? book.viewYear : new Date().getFullYear()
   readonly property int viewMonth: book ? book.viewMonth : new Date().getMonth()
-  readonly property var cells: book ? book.cells : []
+  readonly property var weeks: book ? book.weeks : []
+  readonly property var yearMonths: book ? book.yearMonths : []
   readonly property var dayEvents: book ? book.selectedEvents : []
-  readonly property var upcomingEvents: book ? book.upcomingEvents : []
   readonly property int todayCount: book ? book.todayEvents.length : 0
   readonly property bool use24Hour: book ? book.use24Hour : true
   readonly property bool weekStartsMonday: book ? book.weekStartsMonday : true
   readonly property bool showWeekNumbers: book ? book.showWeekNumbers : true
-  readonly property int upcomingDays: book ? book.upcomingDays : 14
+  readonly property real yearProgress: book ? book.yearProgress : 0
   readonly property string barText: book ? book.barText : ""
   readonly property string barGlyph: Model.barIconGlyph(setting("barIcon", "calendar"))
 
-  // "month" is the calendar; "upcoming" is the flat list of what is coming.
-  property string view: "month"
-  readonly property bool inUpcoming: view === "upcoming"
+  readonly property int selectedDay: {
+    var date = Model.fromISO(selectedISO)
+    return date ? date.getDate() : 0
+  }
 
-  // Esc and the arrow keys belong to the grid unless the add field has focus.
+  readonly property int todayMonth: {
+    var date = Model.fromISO(todayISO)
+    return date && date.getFullYear() === viewYear ? date.getMonth() : -1
+  }
+
+  // --- pages --------------------------------------------------------------------
+  // "month" and "year" are the two halves of the toggle; "detail" and "compose"
+  // take over the body below the masthead.
+  readonly property string page: book ? book.uiPage : "month"
+  readonly property bool onCalendar: page === "month" || page === "year"
+
+  readonly property string openEventId: book ? book.uiEventId : ""
+  property string composeError: ""
   property bool textFocus: false
-  property var addFieldRef: null
-  property string addError: ""
 
-  readonly property string heroMeta: {
-    if (!book) return "Loading…"
-    var when = Model.relativeDay(selectedISO, todayISO)
-    var n = dayEvents.length
-    return when + " · " + (n === 0 ? "nothing planned" : n + (n === 1 ? " event" : " events"))
+  readonly property var openEvent: {
+    if (openEventId === "" || !book) return null
+    return book.occurrenceById(openEventId, selectedISO)
+  }
+
+  function showPage(name, id) { if (book) book.showPage(name, id || "") }
+
+  function openDetail(id) { showPage("detail", id) }
+
+  function startCompose(id) {
+    composeError = ""
+    showPage("compose", id || "")
+  }
+
+  function backFromPage() {
+    composeError = ""
+    showPage("month", "")
   }
 
   // --- actions ------------------------------------------------------------------
@@ -80,31 +124,31 @@ Panel {
   function selectDay(iso) { if (book) book.select(iso) }
   function goToday() { if (book) book.goToday() }
   function stepDay(delta) { if (book) book.select(Model.shiftISO(selectedISO, delta)) }
-  function removeEvent(id) { if (book) book.remove(id) }
   function openFile() { if (book) book.openEventsFile() }
 
-  function submitAdd(field) {
-    if (!book || !field) return
-    var error = book.addFromInput(field.text, selectedISO)
-    addError = error
-    if (error === "") field.text = ""
+  function saveCompose(values) {
+    if (!book) return
+    var error = book.saveEvent(openEventId, values)
+    if (error !== "") { composeError = error; return }
+    backFromPage()
   }
 
-  function focusAddField() {
-    if (addFieldRef) addFieldRef.forceActiveFocus()
+  function deleteEvent(id) {
+    if (book) book.remove(id)
+    backFromPage()
   }
 
   function barPressed(buttonCode) {
     if (buttonCode === Qt.RightButton) goToday()
-    else if (buttonCode === Qt.MiddleButton) view = inUpcoming ? "month" : "upcoming"
+    else if (buttonCode === Qt.MiddleButton) { open(); startCompose("") }
     else toggle()
   }
 
-  // Opening always lands on today rather than wherever last month's browsing
-  // left the shared selection.
+  // Opening always lands on today's month rather than wherever last month's
+  // browsing left the shared selection.
   onOpenedChanged: {
-    if (opened) { view = "month"; goToday() }
-    else { addError = ""; textFocus = false }
+    if (opened) { showPage("month", ""); composeError = ""; goToday() }
+    else { textFocus = false }
   }
 
   // --- bar widget ---------------------------------------------------------------
@@ -147,280 +191,431 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(360))
-    contentHeight: panel.fittedContentHeight(card.implicitHeight, Style.space(720))
+    // The mockup's own 32px gutter, so the rules run edge to edge inside it.
+    padding: tokens.pad
+    contentWidth: panel.fittedContentWidth(Style.space(613))
+    contentHeight: panel.fittedContentHeight(card.implicitHeight, Style.space(900))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       blocked: root.textFocus
-      onCloseRequested: root.close()
+      onCloseRequested: root.onCalendar ? root.close() : root.backFromPage()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      // Left/right walk days, up/down walk weeks — the grid's own geometry.
       onMoveRequested: function(dx, dy) {
+        if (root.page === "year") {
+          if (dx !== 0) root.stepMonth(dx > 0 ? 1 : -1)
+          if (dy !== 0) root.stepMonth(dy > 0 ? 4 : -4)
+          return
+        }
+        if (!root.onCalendar) return
         if (dx !== 0) root.stepDay(dx > 0 ? 1 : -1)
         if (dy !== 0) root.stepDay(dy > 0 ? 7 : -7)
       }
-      onReturnRequested: root.focusAddField()
-      onActivateRequested: root.focusAddField()
+      onReturnRequested: if (root.onCalendar) root.startCompose("")
       onTextKey: function(text) {
+        if (!root.onCalendar) return
         var key = String(text).toLowerCase()
         if (key === "t") root.goToday()
         else if (key === "n" || key === "]") root.stepMonth(1)
         else if (key === "p" || key === "[") root.stepMonth(-1)
-        else if (key === "u") root.view = root.inUpcoming ? "month" : "upcoming"
+        else if (key === "y") root.showPage(root.page === "year" ? "month" : "year", "")
+        else if (key === "a") root.startCompose("")
         else if (key === "o") root.openFile()
-        else if (key === "a") root.focusAddField()
       }
 
       Column {
         id: card
         width: parent.width
-        spacing: Style.space(10)
+        spacing: 0
 
-        // --- heading ----------------------------------------------------------
-        PanelHero {
+        // --- masthead -------------------------------------------------------
+        CalendarHeader {
           width: parent.width
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          title: root.inUpcoming ? "Upcoming" : Model.monthTitle(root.viewYear, root.viewMonth)
-          meta: root.inUpcoming
-            ? "Next " + root.upcomingDays + " days · " + root.upcomingEvents.length + " in total"
-            : root.heroMeta
-          iconComponent: Component {
-            Text {
-              text: Model.barIconGlyph("month")
-              color: root.accent
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.display
-            }
-          }
+          chrome: tokens
+          title: root.page === "year" ? String(root.viewYear) : Model.MONTH_NAMES[root.viewMonth]
+          trailing: root.page === "year" ? "" : String(root.selectedDay)
+          year: root.viewYear
+          progress: root.yearProgress
+          onSlabClicked: root.goToday()
           trailingControl: Component {
-            Row {
-              spacing: Style.space(4)
-
-              PanelActionButton {
-                visible: !root.inUpcoming
-                iconText: "\u{F0141}"          // chevron-left
-                tooltipText: "Previous month (p)"
-                foreground: root.dim
-                hoverColor: root.foreground
-                fontFamily: root.fontFamily
-                onClicked: root.stepMonth(-1)
-              }
-
-              Button {
-                text: "Today"
-                tooltipText: "Jump to today (t)"
-                bordered: true
-                selected: root.selectedISO === root.todayISO && !root.inUpcoming
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                fontSize: Style.font.caption
-                onClicked: { root.view = "month"; root.goToday() }
-              }
-
-              PanelActionButton {
-                visible: !root.inUpcoming
-                iconText: "\u{F0142}"          // chevron-right
-                tooltipText: "Next month (n)"
-                foreground: root.dim
-                hoverColor: root.foreground
-                fontFamily: root.fontFamily
-                onClicked: root.stepMonth(1)
-              }
+            SegmentedToggle {
+              chrome: tokens
+              current: root.page === "year" ? "year" : "weeks"
+              options: [{ key: "weeks", label: "WEEKS" }, { key: "year", label: "YEAR" }]
+              onPicked: function(key) { root.showPage(key === "year" ? "year" : "month", "") }
             }
           }
         }
 
-        // --- month or upcoming ------------------------------------------------
+        Item { width: 1; height: Style.space(19) }
+
+        Rectangle { width: parent.width; height: 1; color: tokens.rule }
+
+        Item { width: 1; height: Style.space(25) }
+
+        // --- weekday row and the WEEKS / YEAR switch -------------------------
+        // Weekday letters only — the year page has nothing to put here, so the
+        // row collapses rather than leaving a band of empty space.
+        Item {
+          width: parent.width
+          height: root.page === "month" ? tokens.segment : 0
+          visible: root.page === "month"
+
+          // Centred over the columns they head, which the mockup's own squeeze
+          // could not do with the switch sharing the row.
+          Row {
+            id: weekdayRow
+            x: tokens.gutter
+            height: parent.height
+            visible: root.page === "month"
+            readonly property real slot: Math.max(1, (parent.width - tokens.gutter) / 7)
+
+            Repeater {
+              model: Model.weekdayPairs(root.weekStartsMonday)
+
+              delegate: Text {
+                required property var modelData
+                width: weekdayRow.slot
+                height: weekdayRow.height
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                text: modelData
+                color: tokens.dimmer
+                font.family: tokens.fontFamily
+                font.pixelSize: tokens.labelSize
+                font.letterSpacing: tokens.trackedSpacing
+              }
+            }
+          }
+
+        }
+
+        Item { width: 1; height: root.onCalendar ? Style.space(13) : 0 }
+
+
+        // --- the body -------------------------------------------------------
         Loader {
+          id: pageLoader
           width: parent.width
-          sourceComponent: root.inUpcoming ? upcomingView : monthView
-        }
-
-        PanelSeparator { width: parent.width; foreground: root.foreground }
-
-        // --- add --------------------------------------------------------------
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
-
-          TextField {
-            id: addField
-            width: parent.width
-            placeholderText: "Add: [date] [HH:MM] title [!weekly]"
-            foreground: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            Component.onCompleted: root.addFieldRef = addField
-            onActiveFocusChanged: root.textFocus = activeFocus
-            onTextChanged: root.addError = ""
-            onAccepted: root.submitAdd(addField)
-            Keys.onEscapePressed: { text = ""; keyCatcher.forceActiveFocus() }
-          }
-
-          Text {
-            width: parent.width
-            visible: root.addError !== ""
-            text: root.addError
-            color: root.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-        }
-
-        PanelSeparator { width: parent.width; foreground: root.foreground }
-
-        // --- footer -----------------------------------------------------------
-        Row {
-          spacing: Style.space(6)
-
-          PanelActionButton {
-            iconText: root.inUpcoming ? Model.barIconGlyph("month") : "\u{F0A33}"   // calendar-week
-            tooltipText: root.inUpcoming ? "Back to the month (u)" : "Upcoming events (u)"
-            foreground: root.inUpcoming ? root.accent : root.dim
-            hoverColor: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: root.view = root.inUpcoming ? "month" : "upcoming"
-          }
-
-          PanelActionButton {
-            iconText: "\u{F11D7}"              // note-text-outline
-            tooltipText: "Open events.json (o)"
-            foreground: root.dim
-            hoverColor: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: root.openFile()
-          }
-
-          Item { width: Style.space(4); height: 1 }
-
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.book && root.book.lastError !== "" ? root.book.lastError : ""
-            color: root.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
+          sourceComponent: {
+            if (root.page === "year") return yearPage
+            if (root.page === "detail") return detailPage
+            if (root.page === "compose") return composePage
+            return monthPage
           }
         }
       }
     }
   }
 
-  // --- the month view -------------------------------------------------------------
+  // --- the month page ---------------------------------------------------------------
   Component {
-    id: monthView
+    id: monthPage
 
     Column {
-      spacing: Style.space(8)
+      spacing: 0
 
       MonthGrid {
         width: parent.width
-        cells: root.cells
-        weekdayLabels: Model.weekdayLabels(root.weekStartsMonday)
-        showWeekNumbers: root.showWeekNumbers
+        chrome: tokens
+        weeks: root.weeks
         selectedISO: root.selectedISO
-        foreground: root.foreground
-        accent: root.accent
-        dim: root.dim
-        hairline: root.hairline
-        fontFamily: root.fontFamily
         onDaySelected: function(iso) { root.selectDay(iso) }
+        onDayActivated: function(iso) { root.selectDay(iso); root.startCompose("") }
       }
 
-      PanelSeparator { width: parent.width; foreground: root.foreground }
+      Item { width: 1; height: Style.space(24) }
 
-      // The selected day's agenda.
+      Rectangle { width: parent.width; height: 1; color: tokens.rule }
+
+      Item { width: 1; height: Style.space(20) }
+
+      // --- the selected day ----------------------------------------------
+      Item {
+        width: parent.width
+        height: Math.max(dayHeading.implicitHeight, addButton.height)
+
+        Column {
+          id: dayHeading
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(9)
+
+          Text {
+            text: Model.dayHeading(root.selectedISO)
+            color: tokens.dim
+            font.family: tokens.fontFamily
+            font.pixelSize: tokens.labelSize
+            font.letterSpacing: tokens.trackedSpacing
+          }
+
+          Text {
+            text: Model.countLabel(root.dayEvents.length)
+            color: tokens.headline
+            font.family: tokens.displayFamily
+            font.pixelSize: tokens.sectionSize
+          }
+        }
+
+        OutlineButton {
+          id: addButton
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          chrome: tokens
+          glyph: "\u{F0415}"                       // plus
+          onClicked: root.startCompose("")
+        }
+      }
+
+      Item { width: 1; height: Style.space(25) }
+
+      // --- the agenda ------------------------------------------------------
       Column {
         width: parent.width
-        spacing: Style.space(4)
+        spacing: 0
 
-        PanelSectionHeader {
+        Rectangle { width: parent.width; height: 1; color: tokens.rule }
+
+        // An empty day still reads as a band, so the page does not jump when
+        // the last event of a day is deleted.
+        Item {
           width: parent.width
-          text: Model.formatDayLong(root.selectedISO)
-          foreground: root.foreground
-          fontFamily: root.fontFamily
+          height: tokens.eventRow
+          visible: root.dayEvents.length === 0
+
+          Text {
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(13)
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Nothing planned"
+            color: tokens.dimmer
+            font.family: tokens.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          Rectangle {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: 1
+            color: tokens.rule
+          }
+        }
+
+        // Four bands is as tall as the agenda gets; a busier day scrolls.
+        Flickable {
+          width: parent.width
+          height: Math.min(agenda.implicitHeight, tokens.eventRow * 4)
+          visible: root.dayEvents.length > 0
+          contentHeight: agenda.implicitHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+
+          Column {
+            id: agenda
+            width: parent.width
+
+            Repeater {
+              model: root.dayEvents
+
+              delegate: EventCard {
+                required property var modelData
+                width: agenda.width
+                chrome: tokens
+                occurrence: modelData
+                use24Hour: root.use24Hour
+                onOpened: function(id) { root.openDetail(id) }
+              }
+            }
+          }
+        }
+      }
+
+      Item { width: 1; height: Style.space(30) }
+
+      // --- month pager -----------------------------------------------------
+      Item {
+        width: parent.width
+        height: Style.space(30)
+
+        Text {
+          id: prevMonth
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "\u{F0141}"                          // chevron-left
+          color: prevMouse.containsMouse ? tokens.headline : tokens.dim
+          font.family: tokens.glyphFamily
+          font.pixelSize: Style.font.icon
+
+          MouseArea {
+            id: prevMouse
+            anchors.fill: parent
+            anchors.margins: -Style.space(10)
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.stepMonth(-1)
+          }
         }
 
         Text {
-          width: parent.width
-          visible: root.dayEvents.length === 0
-          text: "Nothing planned — type below to add something."
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
+          anchors.centerIn: parent
+          text: Model.upperMonth(root.viewYear, root.viewMonth)
+          color: tokens.dim
+          font.family: tokens.fontFamily
+          font.pixelSize: tokens.labelSize
+          font.letterSpacing: tokens.trackedSpacing
         }
 
-        Repeater {
-          model: root.dayEvents
-          delegate: EventRow {
-            required property var modelData
-            width: parent.width
-            occurrence: modelData
-            use24Hour: root.use24Hour
-            foreground: root.foreground
-            dim: root.dim
-            accent: root.accent
-            hoverFill: root.hoverFill
-            fontFamily: root.fontFamily
-            onRemoveRequested: function(id) { root.removeEvent(id) }
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "\u{F0142}"                          // chevron-right
+          color: nextMouse.containsMouse ? tokens.headline : tokens.dim
+          font.family: tokens.glyphFamily
+          font.pixelSize: Style.font.icon
+
+          MouseArea {
+            id: nextMouse
+            anchors.fill: parent
+            anchors.margins: -Style.space(10)
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.stepMonth(1)
+          }
+        }
+      }
+
+      Item { width: 1; height: Style.space(25) }
+
+      Row {
+        spacing: Style.space(10)
+
+        OutlineButton {
+          chrome: tokens
+          glyph: "\u{F0415}"                         // plus
+          label: "NEW EVENT"
+          onClicked: root.startCompose("")
+        }
+
+        OutlineButton {
+          chrome: tokens
+          label: "TODAY"
+          onClicked: root.goToday()
+        }
+      }
+    }
+  }
+
+  // --- the year page ----------------------------------------------------------------
+  Component {
+    id: yearPage
+
+    Column {
+      spacing: 0
+
+      YearGrid {
+        width: parent.width
+        chrome: tokens
+        months: root.yearMonths
+        currentMonth: root.viewMonth
+        todayMonth: root.todayMonth
+        onMonthPicked: function(month) {
+          if (root.book) root.book.showMonth(root.viewYear, month)
+          root.showPage("month", "")
+        }
+      }
+
+      Item { width: 1; height: Style.space(30) }
+
+      Item {
+        width: parent.width
+        height: Style.space(30)
+
+        Text {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "\u{F0141}"
+          color: prevYearMouse.containsMouse ? tokens.headline : tokens.dim
+          font.family: tokens.glyphFamily
+          font.pixelSize: Style.font.icon
+
+          MouseArea {
+            id: prevYearMouse
+            anchors.fill: parent
+            anchors.margins: -Style.space(10)
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.stepMonth(-12)
+          }
+        }
+
+        Text {
+          anchors.centerIn: parent
+          text: String(root.viewYear)
+          color: tokens.dim
+          font.family: tokens.fontFamily
+          font.pixelSize: tokens.labelSize
+          font.letterSpacing: tokens.trackedSpacing
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "\u{F0142}"
+          color: nextYearMouse.containsMouse ? tokens.headline : tokens.dim
+          font.family: tokens.glyphFamily
+          font.pixelSize: Style.font.icon
+
+          MouseArea {
+            id: nextYearMouse
+            anchors.fill: parent
+            anchors.margins: -Style.space(10)
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.stepMonth(12)
           }
         }
       }
     }
   }
 
-  // --- the upcoming view ----------------------------------------------------------
+  // --- the detail page --------------------------------------------------------------
   Component {
-    id: upcomingView
+    id: detailPage
 
-    Column {
-      spacing: Style.space(6)
+    EventDetail {
+      chrome: tokens
+      occurrence: root.openEvent
+      use24Hour: root.use24Hour
+      onEditRequested: function(id) { root.startCompose(id) }
+      onDeleteRequested: function(id) { root.deleteEvent(id) }
+      onClosed: root.backFromPage()
+    }
+  }
 
-      Text {
-        width: parent.width
-        visible: root.upcomingEvents.length === 0
-        text: "Nothing in the next " + root.upcomingDays + " days."
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
+  // --- the compose page -------------------------------------------------------------
+  Component {
+    id: composePage
+
+    EventCompose {
+      chrome: tokens
+      dateISO: root.selectedISO
+      editingId: root.openEventId
+      error: root.composeError
+      onSaved: function(values) { root.saveCompose(values) }
+      onCancelled: root.backFromPage()
+      onAnyFieldFocusedChanged: root.textFocus = anyFieldFocused
+      // The form is created the moment the page switches, so it fills itself
+      // in rather than waiting to be pushed at.
+      Component.onCompleted: {
+        load(root.openEvent)
+        focusTitle()
       }
-
-      Repeater {
-        model: root.upcomingEvents
-        delegate: Column {
-          required property var modelData
-          required property int index
-          width: parent.width
-          spacing: Style.space(2)
-
-          // One heading per day, printed on the first occurrence of that day.
-          PanelSectionHeader {
-            width: parent.width
-            visible: index === 0 || root.upcomingEvents[index - 1].iso !== modelData.iso
-            text: Model.relativeDay(modelData.iso, root.todayISO)
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-
-          EventRow {
-            width: parent.width
-            occurrence: modelData
-            use24Hour: root.use24Hour
-            foreground: root.foreground
-            dim: root.dim
-            accent: root.accent
-            hoverFill: root.hoverFill
-            fontFamily: root.fontFamily
-            onClicked: function(iso) { root.view = "month"; root.selectDay(iso) }
-            onRemoveRequested: function(id) { root.removeEvent(id) }
-          }
-        }
-      }
+      Component.onDestruction: root.textFocus = false
     }
   }
 }

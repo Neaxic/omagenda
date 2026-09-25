@@ -36,40 +36,61 @@ test("addMonths wraps the year in both directions", () => {
 
 // --- the grid ---------------------------------------------------------------
 
-test("monthCells lays out a month Monday-first with week numbers", () => {
-  const cells = M.monthCells(2026, 8, { mondayFirst: true, todayISO: "2026-09-26" })
-  // September 2026 starts on a Tuesday and has 30 days: 5 rows of 7 + 5 week cells.
-  assert.equal(cells.length, 5 * 8)
-  assert.equal(cells[0].kind, "week")
-  assert.equal(cells[0].week, 36)
-  const first = cells.find(c => c.iso === "2026-09-01")
-  assert.equal(first.inMonth, true)
+test("monthWeeks lays out a month Monday-first with week numbers", () => {
+  const weeks = M.monthWeeks(2026, 8, { mondayFirst: true, todayISO: "2026-09-26" })
+  // September 2026 starts on a Tuesday and has 30 days: five rows.
+  assert.equal(weeks.length, 5)
+  assert.deepEqual(weeks.map(w => w.week), [36, 37, 38, 39, 40])
+  assert.equal(weeks[0].days.length, 7)
   // One leading day from August fills the Monday slot.
-  assert.equal(cells[1].iso, "2026-08-31")
-  assert.equal(cells[1].inMonth, false)
-  const today = cells.find(c => c.today)
+  assert.equal(weeks[0].days[0].iso, "2026-08-31")
+  assert.equal(weeks[0].days[0].inMonth, false)
+  assert.equal(weeks[0].days[1].iso, "2026-09-01")
+  assert.equal(weeks[0].days[1].inMonth, true)
+  const today = weeks[3].days.find(d => d.today)
   assert.equal(today.iso, "2026-09-26")
   assert.equal(today.weekend, true)
 })
 
-test("monthCells blanks the neighbours when adjacent months are off", () => {
-  const cells = M.monthCells(2026, 8, { mondayFirst: true, showWeekNumbers: false, showAdjacentMonths: false })
-  assert.equal(cells.length, 35)
-  assert.equal(cells[0].kind, "blank")
-  assert.equal(cells[1].iso, "2026-09-01")
+test("monthWeeks blanks the neighbours when adjacent months are off", () => {
+  const weeks = M.monthWeeks(2026, 8, { mondayFirst: true, showAdjacentMonths: false })
+  assert.equal(weeks[0].days[0].iso, "")
+  assert.equal(weeks[0].days[0].day, 0)
+  assert.equal(weeks[0].days[1].iso, "2026-09-01")
 })
 
-test("monthCells carries per-day counts", () => {
+test("monthWeeks carries per-day counts", () => {
   const events = [ev({ date: "2026-09-10" }), ev({ id: "y", date: "2026-09-10", title: "Other" })]
   const counts = M.countsForMonth(events, 2026, 8)
-  const cells = M.monthCells(2026, 8, { counts })
-  assert.equal(cells.find(c => c.iso === "2026-09-10").count, 2)
-  assert.equal(cells.find(c => c.iso === "2026-09-11").count, 0)
+  const weeks = M.monthWeeks(2026, 8, { counts })
+  const all = weeks.reduce((acc, w) => acc.concat(w.days), [])
+  assert.equal(all.find(d => d.iso === "2026-09-10").count, 2)
+  assert.equal(all.find(d => d.iso === "2026-09-11").count, 0)
+})
+
+test("yearMonths returns twelve self-contained months", () => {
+  const months = M.yearMonths(2026, { todayISO: "2026-09-26" })
+  assert.equal(months.length, 12)
+  assert.equal(months[8].short, "Sep")
+  // No adjacent-month days leak into a mini grid.
+  const stray = months[8].weeks.reduce((acc, w) => acc.concat(w.days), [])
+                              .filter(d => d.iso !== "" && !d.inMonth)
+  assert.equal(stray.length, 0)
+})
+
+test("yearProgress tracks the year and clamps outside it", () => {
+  assert.equal(M.percentLabel(M.yearProgress(2026, "2026-09-26")), "73%")
+  assert.equal(M.yearProgress(2026, "2026-01-01"), 0)
+  assert.equal(M.percentLabel(M.yearProgress(2026, "2026-12-31")), "100%")
+  assert.equal(M.yearProgress(2027, "2026-09-26"), 0)
+  assert.equal(M.yearProgress(2025, "2026-09-26"), 1)
 })
 
 test("weekdayLabels rotates for a Monday start", () => {
   assert.deepEqual(M.weekdayLabels(true), ["M", "T", "W", "T", "F", "S", "S"])
   assert.deepEqual(M.weekdayLabels(false), ["S", "M", "T", "W", "T", "F", "S"])
+  assert.deepEqual(M.weekdayPairs(true), ["MO", "TU", "WE", "TH", "FR", "SA", "SU"])
+  assert.deepEqual(M.weekdayPairs(false), ["SU", "MO", "TU", "WE", "TH", "FR", "SA"])
 })
 
 // --- the store --------------------------------------------------------------
@@ -104,6 +125,38 @@ test("a store round-trips through serialize and parse", () => {
   assert.deepEqual(back, events)
   // Defaults stay out of the file so hand-editing it is pleasant.
   assert.equal(M.serializeStore([ev()]).includes("repeat"), false)
+})
+
+test("an event keeps its location through the store", () => {
+  const e = M.normalizeEvent({ title: "Design review", date: "2026-09-26", time: "14:00",
+                               durationMin: 60, location: " Studio 2 " })
+  assert.equal(e.location, "Studio 2")
+  const back = M.parseStore(M.serializeStore([Object.assign({ id: "a" }, e)]))
+  assert.equal(back[0].location, "Studio 2")
+  assert.equal(M.eventsOn(back, "2026-09-26")[0].location, "Studio 2")
+})
+
+test("timeRange reads the way the card prints it", () => {
+  assert.equal(M.timeRange({ time: "14:00", durationMin: 60 }, true), "14:00 – 15:00")
+  assert.equal(M.timeRange({ time: "14:00", durationMin: 0 }, true), "14:00")
+  assert.equal(M.timeRange({ time: "", durationMin: 0 }, true), "All day")
+  assert.equal(M.timeRange({ time: "14:00", durationMin: 60 }, false), "2:00pm – 3:00pm")
+  // Past midnight wraps rather than printing 25:00.
+  assert.equal(M.endTime("23:30", 60), "00:30")
+})
+
+test("the headings match the mockup's wording", () => {
+  assert.equal(M.dayHeading("2026-09-26"), "SATURDAY, SEPTEMBER 26")
+  assert.equal(M.upperMonth(2026, 8), "SEPTEMBER 2026")
+  assert.equal(M.countLabel(0), "No events")
+  assert.equal(M.countLabel(1), "1 event")
+  assert.equal(M.countLabel(3), "3 events")
+})
+
+test("pickFamily takes the first installed headline face", () => {
+  assert.equal(M.pickFamily(["Noto Sans", "Liberation Sans"], ["Inter", "Noto Sans"], "mono"), "Noto Sans")
+  assert.equal(M.pickFamily(["liberation sans"], ["Liberation Sans"], "mono"), "liberation sans")
+  assert.equal(M.pickFamily(["DejaVu Sans"], ["Inter"], "monospace"), "monospace")
 })
 
 test("sortEvents puts all-day first, then by time", () => {

@@ -80,6 +80,19 @@ Item {
   property int viewMonth: new Date().getMonth()
   property string selectedISO: Model.todayISO()
 
+  // Which page the popup is on. It lives here with the rest of the view state so
+  // both monitors agree, and so the pages can be driven over IPC for testing.
+  property string uiPage: "month"      // month | year | detail | compose
+  property string uiEventId: ""
+
+  function showPage(name, id) {
+    var page = String(name || "month")
+    if (["month", "year", "detail", "compose"].indexOf(page) === -1) return false
+    uiEventId = id === undefined || id === null ? "" : String(id)
+    uiPage = page
+    return true
+  }
+
   function showMonth(year, month) {
     viewYear = year
     viewMonth = month
@@ -109,18 +122,27 @@ Item {
   property string lastError: ""
 
   readonly property var monthCounts: Model.countsForMonth(events, viewYear, viewMonth)
+  readonly property var yearCounts: Model.countsInRange(events, viewYear + "-01-01", 366)
   readonly property var selectedEvents: Model.eventsOn(events, selectedISO)
   readonly property var todayEvents: Model.eventsOn(events, todayISO)
   readonly property var upcomingEvents: Model.upcoming(events, todayISO, upcomingDays)
   readonly property var next: Model.nextOccurrence(events, todayISO, nowMinutes)
 
-  readonly property var cells: Model.monthCells(viewYear, viewMonth, {
+  readonly property var weeks: Model.monthWeeks(viewYear, viewMonth, {
     mondayFirst: weekStartsMonday,
-    showWeekNumbers: showWeekNumbers,
     showAdjacentMonths: showAdjacentMonths,
     todayISO: todayISO,
     counts: monthCounts
   })
+
+  readonly property var yearMonths: Model.yearMonths(viewYear, {
+    mondayFirst: weekStartsMonday,
+    todayISO: todayISO,
+    counts: yearCounts
+  })
+
+  // How much of the year on screen has gone, for the masthead meter.
+  readonly property real yearProgress: Model.yearProgress(viewYear, todayISO)
 
   readonly property string barText: Model.barLabel({
     mode: barMode, next: next, todayISO: todayISO,
@@ -185,6 +207,53 @@ Item {
       return true
     }
     return false
+  }
+
+  // The event behind an id, as an occurrence: on `preferISO` when the series
+  // lands there, otherwise on its own date. The detail page needs the day it is
+  // standing on, not just the series head.
+  function occurrenceById(id, preferISO) {
+    for (var i = 0; i < events.length; i++) {
+      if (events[i].id !== id) continue
+      var onPreferred = Model.isISODate(preferISO) ? Model.eventsOn([events[i]], preferISO) : []
+      if (onPreferred.length > 0) return onPreferred[0]
+      var own = Model.eventsOn([events[i]], events[i].date)
+      return own.length > 0 ? own[0] : null
+    }
+    return null
+  }
+
+  // Create or update from the compose form. Returns "" or a short message.
+  function saveEvent(id, values) {
+    var raw = {
+      title: values.title,
+      date: values.date,
+      time: values.time,
+      durationMin: values.durationMin,
+      location: values.location,
+      repeat: values.repeat
+    }
+    if (String(values.title || "").replace(/^\s+|\s+$/g, "") === "") return "Give it a title"
+    if (!Model.fromISO(String(values.date || ""))) return "Use a date like " + todayISO
+    if (String(values.time || "") !== "" && Model.normalizeTime(values.time) === "")
+      return "Use a time like 14:00, or leave it blank"
+
+    if (id !== "") {
+      // Keep what the form does not ask about (notes, an until bound).
+      for (var i = 0; i < events.length; i++) {
+        if (events[i].id !== id) continue
+        raw.notes = events[i].notes
+        raw.until = events[i].until
+        break
+      }
+    }
+
+    var event = Model.normalizeEvent(raw)
+    if (!event) return "Could not read that event"
+    event.id = id !== "" ? id : Model.newId(event.date)
+    save(Model.upsertEvent(events, event))
+    select(event.date)
+    return ""
   }
 
   function remove(id) {
@@ -269,6 +338,11 @@ Item {
 
     function today(): string { root.goToday(); return root.todayISO }
 
+    // month | year | detail <id> | compose [id]
+    function page(name: string, id: string): string {
+      return root.showPage(name, id) ? root.uiPage : "expected month|year|detail|compose"
+    }
+
     function barMode(value: string): string {
       root.persistSettings({ barMode: Model.normalizeBarMode(value) })
       return root.barMode
@@ -284,6 +358,19 @@ Item {
       values[key] = parsed
       root.persistSettings(values)
       return JSON.stringify(root.settings)
+    }
+
+    function event(id: string): string {
+      var occurrence = root.occurrenceById(id, root.selectedISO)
+      return occurrence ? JSON.stringify(occurrence) : "unknown id"
+    }
+
+    // The compose form's own path: {"title","date","time","durationMin","location","repeat"}
+    function compose(id: string, json: string): string {
+      var values
+      try { values = JSON.parse(json) } catch (e) { return "expected JSON" }
+      var error = root.saveEvent(id, values)
+      return error === "" ? "ok" : error
     }
 
     function reload(): string { eventsFile.reload(); return "ok" }

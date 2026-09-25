@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "andre",
   "license": "MIT",
-  "description": "A calendar in the Omarchy bar: month view with ISO weeks, a day agenda, and your own events kept in a plain JSON file. No accounts, no network.",
+  "description": "A calendar in the Omarchy bar: a month grid with ISO weeks and a year view, a day agenda with event detail and compose pages, and your own events kept in a plain JSON file. No accounts, no network.",
   "keywords": [
     "calendar",
     "events",
@@ -24,7 +24,7 @@
   },
   "barWidget": {
     "displayName": "Datebook",
-    "description": "Month calendar with a day agenda and locally stored events.",
+    "description": "Month and year calendar with a day agenda, event pages and locally stored events.",
     "category": "Time",
     "allowMultiple": false,
     "defaultSection": "center",
@@ -36,7 +36,8 @@
       "showWeekNumbers": true,
       "showAdjacentMonths": true,
       "use24Hour": true,
-      "upcomingDays": 14
+      "upcomingDays": 14,
+      "displayFont": "auto"
     },
     "schema": [
       {
@@ -73,6 +74,12 @@
         "max": 48,
         "step": 1,
         "defaultValue": 18
+      },
+      {
+        "key": "displayFont",
+        "type": "string",
+        "label": "Headline font \u2014 \"auto\" picks an installed grotesque, \"theme\" keeps the bar's font, or name a family",
+        "defaultValue": "auto"
       },
       {
         "key": "weekStartsMonday",

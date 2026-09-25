@@ -1,28 +1,48 @@
 # Datebook
 
-A calendar for the Omarchy bar: a month view with ISO week numbers, a day
-agenda, and your own events in a plain JSON file. No accounts, no network, no
-sync daemon — the store is a file you can read, edit and back up yourself.
+A calendar for the Omarchy bar, built to a mockup: a month grid with ISO week
+numbers, a year view, a day agenda with detail and compose pages, and your own
+events in a plain JSON file. No accounts, no network, no sync daemon — the store
+is a file you can read, edit and back up yourself.
 
 ```
-┌─ Datebook ────────────────────────────────┐
-│  September 2026          ‹  Today  ›      │
-│  Sat 26 September · 2 events              │
-│                                           │
-│      M  T  W  T  F  S  S                  │
-│  36  31  1  2  3  4  5  6                 │
-│  37   7  8  9 10 11 12 13                 │
-│  38  14 15 16 17 18 19 20                 │
-│  39  21 22 23 24 25 (26) 27               │
-│  40  28 29 30  1  2  3  4                 │
-│                                           │
-│  Sat 26 September 2026                    │
-│  All day   Release day                    │
-│  14:30     Dentist                        │
-│  ─────────────────────────────────────    │
-│  Add: [date] [HH:MM] title [!weekly]      │
-└───────────────────────────────────────────┘
+┌─ Datebook ─────────────────────────────────────────────────┐
+│  ▣   September 29            2026 ────────────────── 73%   │
+│                                        ┌─────────┬───────┐ │
+│                                        │  WEEKS  │ YEAR  │ │
+│         MO    TU    WE    TH    FR    SA    SU   └───────┘ │
+│  ───────────────────────────────────────────────────────── │
+│   36 │ 31  │  1  │  2  │  3  │  4  │  5  │  6              │
+│   37 │  7  │  8  │  9  │ 10  │ 11  │ 12  │ 13              │
+│   38 │ 14  │ 15  │ 16  │ 17  │ 18  │ 19  │ 20              │
+│   39 │ 21  │ 22  │ 23  │ 24  │ 25  │ 26 ·│ 27              │
+│   40 │ 28  │ 29  │ 30  │  1  │  2  │  3  │  4              │
+│      │  ·  │ ··  │                                         │
+│  ───────────────────────────────────────────────────────── │
+│  TUESDAY, SEPTEMBER 29                                 ┌─┐ │
+│  2 events                                              │+│ │
+│  ───────────────────────────────────────────────────── └─┘ │
+│  Ship v0.2                                               ›  │
+│   All day                                                   │
+│  ───────────────────────────────────────────────────────── │
+│  Standup                                                 ›  │
+│   09:30 · every week                                        │
+│  ───────────────────────────────────────────────────────── │
+│  ‹                 SEPTEMBER 2026                        ›  │
+│  ┌──────────────┐ ┌───────┐                                 │
+│  │ + NEW EVENT  │ │ TODAY │                                 │
+│  └──────────────┘ └───────┘                                 │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+Four pages, all inside the one popup:
+
+| Page      | Reached by                        | What it is                                        |
+|-----------|-----------------------------------|---------------------------------------------------|
+| `month`   | the default, or WEEKS             | the grid above, plus the selected day's agenda     |
+| `year`    | the YEAR half of the switch       | twelve miniatures, a mark per day, events brighter |
+| `detail`  | the chevron on an event           | one event's facts, with edit and delete            |
+| `compose` | `+`, NEW EVENT, or EDIT           | title, date, time, length, place and a repeat      |
 
 ## Install
 
@@ -36,15 +56,22 @@ omarchy restart shell
 
 ## Layout
 
-| File           | What lives there                                                            |
-|----------------|-----------------------------------------------------------------------------|
-| `manifest.json`| Plugin id, entry points, the settings schema the bar's settings UI renders   |
-| `Model.js`     | All date and event logic, pure ES5, no QML — shared with the node tests      |
-| `Service.qml`  | The one shared instance: event file, today's clock, view state, IPC target   |
-| `Panel.qml`    | Bar widget plus popup: heading, month/upcoming views, add field, footer      |
-| `MonthGrid.qml`| The month grid; renders the flat cell list `Model.monthCells()` builds       |
-| `EventRow.qml` | One event line: time, title, repeat marker, delete on hover                 |
-| `tests/`       | `node --test tests/` over `Model.js`                                        |
+| File                | What lives there                                                        |
+|---------------------|-------------------------------------------------------------------------|
+| `manifest.json`     | Plugin id, entry points, the settings schema the bar's settings UI renders |
+| `Model.js`          | All date and event logic, pure ES5, no QML — shared with the node tests  |
+| `Service.qml`       | The one shared instance: event file, today's clock, view state, IPC target |
+| `Chrome.qml`        | The design tokens — every ink level is the theme foreground at a fixed alpha |
+| `Panel.qml`         | Bar widget plus popup: masthead, page routing, keyboard                  |
+| `CalendarHeader.qml`| The masthead: glyph slab, month set large, year meter, the view switch   |
+| `MonthGrid.qml`     | The month grid: week gutter, hairlines, day numbers, dots                |
+| `YearGrid.qml`      | The year page's twelve miniatures                                        |
+| `EventCard.qml`     | One event band: title, time and place, chevron                           |
+| `EventDetail.qml`   | The detail page                                                          |
+| `EventCompose.qml`  | The new/edit form, built from `FormField` and `SegmentedToggle`          |
+| `FormField.qml`     | A labelled input closed by a rule rather than a box                      |
+| `SegmentedToggle.qml`, `OutlineButton.qml` | The two controls the design uses everywhere      |
+| `tests/`            | `node --test tests/` over `Model.js`                                     |
 
 `Service.qml` is mounted once per session; the bar widgets (one per monitor)
 find it with `bar.shell.serviceFor("datebook")`. Because the selected day and
@@ -59,7 +86,8 @@ it on the other too.
 {
   "version": 1,
   "events": [
-    { "id": "20260926-3f2a", "title": "Dentist", "date": "2026-09-26", "time": "14:30" },
+    { "id": "20260926-3f2a", "title": "Design review", "date": "2026-09-26", "time": "14:00",
+      "durationMin": 60, "location": "Studio 2" },
     { "id": "20260101-8b11", "title": "Rent", "date": "2026-01-01", "repeat": "monthly" },
     { "id": "20260405-01cd", "title": "Standup", "date": "2026-04-05", "time": "09:00",
       "repeat": "weekly", "until": "2026-12-18", "notes": "room 2" }
@@ -69,6 +97,7 @@ it on the other too.
 
 - `date` and `time` are local; the file holds no timezones.
 - `time` omitted or `""` means all day, and sorts ahead of timed events.
+- `durationMin` gives the card its "14:00 – 15:00"; `location` its place.
 - `repeat` is `daily`, `weekly`, `monthly` or `yearly`, walking forward from
   `date` only. A monthly repeat on the 31st simply has no occurrence in a
   30-day month rather than sliding to the 30th.
@@ -83,14 +112,16 @@ newer in-panel edit.
 
 | Where        | Action                                               |
 |--------------|------------------------------------------------------|
-| Bar          | Left click opens, right click jumps to today, middle click toggles the upcoming list |
-| Grid         | Click a day to select it                             |
-| Add field    | `Dentist`, `14:30 Dentist`, `2026-10-02 09:00 Standup`, `tomorrow 08:15 Flight`, `Standup !weekly` |
-| Event row    | Hover to reveal delete (a repeat deletes the whole series) |
+| Bar          | Left click opens, right click jumps to today, middle click starts a new event |
+| Grid         | Click a day to select it, double click to add one there |
+| WEEKS / YEAR | Switch the grid for twelve months; click a month to open it |
+| Event band   | Click anywhere on it for the detail page, then EDIT or DELETE |
+| `+` / NEW EVENT | The compose form: title, date, time, minutes, place, repeat |
 
-Keys while the popup has focus: arrows walk days and weeks, `Return`/`a` focus
-the add field, `t` today, `n`/`p` next and previous month, `u` upcoming, `o`
-opens `events.json`, `Esc` closes.
+Keys while the popup has focus: arrows walk days and weeks (months on the year
+page), `Return`/`a` opens the compose form, `t` today, `n`/`p` next and previous
+month, `y` toggles the year page, `o` opens `events.json`. `Esc` steps back a
+page, or closes the popup from the calendar.
 
 ## Settings
 
@@ -102,6 +133,7 @@ schema describes:
 | `barMode`            | `next`     | `next` (next event), `date`, `count`, `icon`   |
 | `barIcon`            | `calendar` | `calendar`, `month`, `today`, `blank`, `clock`, `none` |
 | `barMaxTitle`        | `18`       | Longest event title in the bar                 |
+| `displayFont`        | `auto`     | Headline face: `auto` picks an installed grotesque, `theme` keeps the bar's font, or name a family |
 | `weekStartsMonday`   | `true`     | Monday-first grid                              |
 | `showWeekNumbers`    | `true`     | ISO week column                                |
 | `showAdjacentMonths` | `true`     | Dim days from the neighbouring months          |
@@ -110,8 +142,9 @@ schema describes:
 
 ## IPC
 
-`omarchy-shell datebook <method> [args]` — the same surface the UI uses, which
-makes it the quick way to test without clicking:
+`omarchy-shell datebook <method> [args]` — the same surface the UI uses,
+including page navigation and the compose form's own save path, which makes it
+the quick way to drive the popup without clicking:
 
 ```bash
 omarchy-shell datebook status
@@ -121,11 +154,27 @@ omarchy-shell datebook upcoming 30
 omarchy-shell datebook select 2026-10-02
 omarchy-shell datebook month 1          # page forward a month
 omarchy-shell datebook today
+omarchy-shell datebook page year ""          # month | year | detail <id> | compose [id]
+omarchy-shell datebook event 20261002-3f2a   # one event, as the detail page sees it
+omarchy-shell datebook compose "" '{"title":"Sprint planning","date":"2026-09-28","time":"10:30","durationMin":90,"location":"Room 4","repeat":"weekly"}'
 omarchy-shell datebook remove 20261002-3f2a
 omarchy-shell datebook setOption showWeekNumbers false
 omarchy-shell datebook toggle           # open/close the popup
 omarchy-shell datebook path
 ```
+
+## Where this differs from the mockup
+
+- The **WEEKS / YEAR switch sits under the year meter**, not in the weekday row.
+  In the mockup it shares that row with the weekday letters, which pushes them
+  off the columns they head; with the switch moved, they line up.
+- The **year meter is a meter**: a dim track with the elapsed part lit. The
+  mockup draws it fully lit at 73%.
+- **Sunday-first** in the mockup; this defaults to Monday-first
+  (`weekStartsMonday`), which is the local convention here.
+- The mockup is set in one tight grotesque. `displayFont: auto` picks the first
+  installed face from `Model.DISPLAY_FAMILIES`; Nerd Font glyphs stay on the
+  bar's monospace, which is the only family that carries them.
 
 ## Developing
 
