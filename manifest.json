@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "andre",
   "license": "MIT",
-  "description": "A calendar in the Omarchy bar: a month grid with ISO weeks and a year view, a day agenda with event detail and compose pages, and your own events kept in a plain JSON file. No accounts, no network.",
+  "description": "A calendar in the Omarchy bar: a rolling grid of the week you are in and the two ahead, a year view, a day agenda with event detail and compose pages, and your own events kept in a plain JSON file. No accounts, no network.",
   "keywords": [
     "calendar",
     "events",
@@ -24,7 +24,7 @@
   },
   "barWidget": {
     "displayName": "Datebook",
-    "description": "Month and year calendar with a day agenda, event pages and locally stored events.",
+    "description": "A rolling three-week calendar with a day agenda, event pages and locally stored events.",
     "category": "Time",
     "allowMultiple": false,
     "defaultSection": "center",
@@ -34,10 +34,10 @@
       "barMaxTitle": 18,
       "weekStartsMonday": true,
       "showWeekNumbers": true,
-      "showAdjacentMonths": true,
       "use24Hour": true,
       "upcomingDays": 14,
-      "displayFont": "auto"
+      "displayFont": "auto",
+      "weeksShown": 3
     },
     "schema": [
       {
@@ -94,10 +94,13 @@
         "defaultValue": true
       },
       {
-        "key": "showAdjacentMonths",
-        "type": "boolean",
-        "label": "Show days from the neighbouring months",
-        "defaultValue": true
+        "key": "weeksShown",
+        "type": "integer",
+        "label": "Weeks the grid shows, counting the one you are in",
+        "min": 1,
+        "max": 8,
+        "step": 1,
+        "defaultValue": 3
       },
       {
         "key": "use24Hour",

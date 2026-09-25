@@ -9,8 +9,13 @@ Column {
   id: root
 
   property var chrome: null
-  property var weeks: []            // Model.monthWeeks()
+  property var weeks: []            // Model.weeksFrom()
   property string selectedISO: ""
+
+  // The last week of a rolling window is the furthest ahead, so it sits back a
+  // little rather than competing with the week you are in.
+  property bool fadeLastWeek: true
+  property real lastWeekOpacity: 0.55
 
   signal daySelected(string iso)
   signal dayActivated(string iso)   // double click: straight into the day
@@ -36,6 +41,8 @@ Column {
       required property var modelData
       required property int index
       readonly property var week: modelData
+      readonly property real fade: root.fadeLastWeek && root.weeks.length > 1
+        && index === root.weeks.length - 1 ? root.lastWeekOpacity : 1.0
 
       width: root.width
       height: root.rowHeight
@@ -51,6 +58,7 @@ Column {
 
       Text {
         x: 0
+        opacity: weekRow.fade
         width: root.gutterWidth
         height: parent.height
         verticalAlignment: Text.AlignVCenter
@@ -64,6 +72,7 @@ Column {
         x: root.gutterWidth
         height: parent.height
         spacing: 0
+        opacity: weekRow.fade
 
         Repeater {
           model: weekRow.week.days
@@ -105,7 +114,10 @@ Column {
               color: {
                 if (!root.chrome) return "transparent"
                 if (dayCell.selected) return root.chrome.headline
-                if (!dayCell.day.inMonth) return root.chrome.faint
+                // Days past the month's end only step back one level: on a
+                // rolling window they are ordinary future days, and the last
+                // row is already fading them a second time.
+                if (!dayCell.day.inMonth) return root.chrome.dim
                 return root.chrome.body
               }
               font.family: root.chrome ? root.chrome.fontFamily : "monospace"

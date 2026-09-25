@@ -68,6 +68,53 @@ test("monthWeeks carries per-day counts", () => {
   assert.equal(all.find(d => d.iso === "2026-09-11").count, 0)
 })
 
+test("startOfWeek finds the day the week opens on", () => {
+  // 2026-09-26 is a Saturday.
+  assert.equal(M.startOfWeek("2026-09-26", true), "2026-09-21")
+  assert.equal(M.startOfWeek("2026-09-26", false), "2026-09-20")
+  assert.equal(M.startOfWeek("2026-09-21", true), "2026-09-21")
+  // A Sunday belongs to the week that opened the Monday before it.
+  assert.equal(M.startOfWeek("2026-09-27", true), "2026-09-21")
+})
+
+test("weeksFrom rolls forward from the week it is given", () => {
+  const weeks = M.weeksFrom("2026-09-26", 3, { todayISO: "2026-09-26" })
+  assert.equal(weeks.length, 3)
+  assert.deepEqual(weeks.map(w => w.week), [39, 40, 41])
+  assert.equal(weeks[0].days[0].iso, "2026-09-21")
+  assert.equal(weeks[2].days[6].iso, "2026-10-11")
+  // Every cell is a real day — a rolling window has no blanks to pad.
+  const all = weeks.reduce((acc, w) => acc.concat(w.days), [])
+  assert.equal(all.length, 21)
+  assert.equal(all.filter(d => d.iso === "").length, 0)
+  assert.equal(all.filter(d => d.today).length, 1)
+})
+
+test("weeksFrom dims the days that have rolled into the next month", () => {
+  const weeks = M.weeksFrom("2026-09-26", 3, {})
+  assert.equal(weeks[0].days.every(d => d.inMonth), true)
+  assert.equal(weeks[2].days.every(d => !d.inMonth), true)   // all October
+  assert.equal(weeks[1].days.find(d => d.iso === "2026-09-30").inMonth, true)
+  assert.equal(weeks[1].days.find(d => d.iso === "2026-10-01").inMonth, false)
+})
+
+test("weeksFrom carries counts and clamps its length", () => {
+  const events = [ev({ date: "2026-09-29" }), ev({ id: "b", date: "2026-09-29", title: "Other" })]
+  const counts = M.countsInRange(events, "2026-09-21", 21)
+  const weeks = M.weeksFrom("2026-09-26", 3, { counts })
+  assert.equal(weeks[1].days.find(d => d.iso === "2026-09-29").count, 2)
+  // A missing or zero count means "the default window", and the length is capped.
+  assert.equal(M.weeksFrom("2026-09-26", 0, {}).length, 3)
+  assert.equal(M.weeksFrom("2026-09-26", undefined, {}).length, 3)
+  assert.equal(M.weeksFrom("2026-09-26", 99, {}).length, 12)
+})
+
+test("windowLabel names one month, or the two it spans", () => {
+  assert.equal(M.windowLabel("2026-09-01", "2026-09-21"), "SEPTEMBER 2026")
+  assert.equal(M.windowLabel("2026-09-21", "2026-10-11"), "SEP – OCT 2026")
+  assert.equal(M.windowLabel("2026-12-28", "2027-01-17"), "DEC 2026 – JAN 2027")
+})
+
 test("yearMonths returns twelve self-contained months", () => {
   const months = M.yearMonths(2026, { todayISO: "2026-09-26" })
   assert.equal(months.length, 12)

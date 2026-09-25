@@ -47,7 +47,7 @@ QtObject {
   readonly property int gutter: Style.space(33)          // the week-number column
   readonly property int rowHeight: Style.space(63)
   readonly property int cellPad: Style.space(12)
-  readonly property int slab: Style.space(38)            // the header icon button
+  readonly property int slab: Style.space(32)            // the header icon button
   readonly property int control: Style.space(34)         // the + button
   readonly property int segment: Style.space(28)         // the WEEKS/YEAR toggle
   readonly property int eventRow: Style.space(60)
@@ -56,9 +56,9 @@ QtObject {
 
   // --- type -------------------------------------------------------------------
   // The mockup's 46px is set in a tighter face than anything normally installed,
-  // so the headline runs a little smaller here to keep the meter clear of it.
-  readonly property int displaySize: Style.fontPx(3.33)  // 40px "September"
-  readonly property int displayMuted: Style.fontPx(2.33) // 28px "26"
+  // and reads outsized on a bar popup, so the masthead runs smaller than both.
+  readonly property int displaySize: Style.fontPx(2.67)  // 32px "September"
+  readonly property int displayMuted: Style.fontPx(1.83) // 22px "26"
   readonly property int sectionSize: Style.fontPx(1.5)   // 18px "1 event"
   readonly property real trackedSpacing: Math.max(1, Style.space(1) * 1.2)
 

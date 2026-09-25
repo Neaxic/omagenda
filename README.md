@@ -1,34 +1,32 @@
 # Datebook
 
-A calendar for the Omarchy bar, built to a mockup: a month grid with ISO week
-numbers, a year view, a day agenda with detail and compose pages, and your own
-events in a plain JSON file. No accounts, no network, no sync daemon — the store
-is a file you can read, edit and back up yourself.
+A calendar for the Omarchy bar, built to a mockup: a rolling grid of the week
+you are in and the two ahead, a year view, a day agenda with detail and compose
+pages, and your own events in a plain JSON file. No accounts, no network, no sync
+daemon — the store is a file you can read, edit and back up yourself.
+
+The grid rolls rather than paging months: past weeks are gone, not greyed, so
+what you see is the days still in front of you. The furthest week sits back at
+half opacity.
 
 ```
 ┌─ Datebook ─────────────────────────────────────────────────┐
-│  ▣   September 29            2026 ────────────────── 73%   │
+│  ▣  September 26             2026 ────────────────── 73%   │
 │                                        ┌─────────┬───────┐ │
 │                                        │  WEEKS  │ YEAR  │ │
 │         MO    TU    WE    TH    FR    SA    SU   └───────┘ │
 │  ───────────────────────────────────────────────────────── │
-│   36 │ 31  │  1  │  2  │  3  │  4  │  5  │  6              │
-│   37 │  7  │  8  │  9  │ 10  │ 11  │ 12  │ 13              │
-│   38 │ 14  │ 15  │ 16  │ 17  │ 18  │ 19  │ 20              │
-│   39 │ 21  │ 22  │ 23  │ 24  │ 25  │ 26 ·│ 27              │
-│   40 │ 28  │ 29  │ 30  │  1  │  2  │  3  │  4              │
-│      │  ·  │ ··  │                                         │
+│   39 │ 21  │ 22  │ 23  │ 24  │ 25  │[26]·│ 27      ← now   │
+│   40 │ 28 ·│ 29 ··│ 30 │  1  │  2 ·│  3  │  4              │
+│   41 │  5 ·│  6 · │  7 │  8  │  9  │ 10  │ 11      ← faded │
 │  ───────────────────────────────────────────────────────── │
-│  TUESDAY, SEPTEMBER 29                                 ┌─┐ │
-│  2 events                                              │+│ │
+│  SATURDAY, SEPTEMBER 26                                ┌─┐ │
+│  1 event                                               │+│ │
 │  ───────────────────────────────────────────────────── └─┘ │
-│  Ship v0.2                                               ›  │
-│   All day                                                   │
+│  Design review                                           ›  │
+│   14:00 – 15:00 · Studio 2                                  │
 │  ───────────────────────────────────────────────────────── │
-│  Standup                                                 ›  │
-│   09:30 · every week                                        │
-│  ───────────────────────────────────────────────────────── │
-│  ‹                 SEPTEMBER 2026                        ›  │
+│  ‹               SEP – OCT 2026                          ›  │
 │  ┌──────────────┐ ┌───────┐                                 │
 │  │ + NEW EVENT  │ │ TODAY │                                 │
 │  └──────────────┘ └───────┘                                 │
@@ -39,7 +37,7 @@ Four pages, all inside the one popup:
 
 | Page      | Reached by                        | What it is                                        |
 |-----------|-----------------------------------|---------------------------------------------------|
-| `month`   | the default, or WEEKS             | the grid above, plus the selected day's agenda     |
+| `month`   | the default, or WEEKS             | the rolling weeks above, plus the selected day's agenda |
 | `year`    | the YEAR half of the switch       | twelve miniatures, a mark per day, events brighter |
 | `detail`  | the chevron on an event           | one event's facts, with edit and delete            |
 | `compose` | `+`, NEW EVENT, or EDIT           | title, date, time, length, place and a repeat      |
@@ -114,14 +112,16 @@ newer in-panel edit.
 |--------------|------------------------------------------------------|
 | Bar          | Left click opens, right click jumps to today, middle click starts a new event |
 | Grid         | Click a day to select it, double click to add one there |
+| `‹` `›`      | Roll the window one week; a day picked outside it re-anchors the grid |
 | WEEKS / YEAR | Switch the grid for twelve months; click a month to open it |
 | Event band   | Click anywhere on it for the detail page, then EDIT or DELETE |
 | `+` / NEW EVENT | The compose form: title, date, time, minutes, place, repeat |
 
 Keys while the popup has focus: arrows walk days and weeks (months on the year
-page), `Return`/`a` opens the compose form, `t` today, `n`/`p` next and previous
-month, `y` toggles the year page, `o` opens `events.json`. `Esc` steps back a
-page, or closes the popup from the calendar.
+page), `Return`/`a` opens the compose form, `t` today, `n`/`p` roll the window a
+week forward and back (a year on the year page), `y` toggles the year page, `o`
+opens `events.json`. `Esc` steps back a page, or closes the popup from the
+calendar.
 
 ## Settings
 
@@ -136,7 +136,7 @@ schema describes:
 | `displayFont`        | `auto`     | Headline face: `auto` picks an installed grotesque, `theme` keeps the bar's font, or name a family |
 | `weekStartsMonday`   | `true`     | Monday-first grid                              |
 | `showWeekNumbers`    | `true`     | ISO week column                                |
-| `showAdjacentMonths` | `true`     | Dim days from the neighbouring months          |
+| `weeksShown`         | `3`        | Weeks in the grid, counting the one you are in (1–8) |
 | `use24Hour`          | `true`     | 24-hour times                                  |
 | `upcomingDays`       | `14`       | Window the upcoming list covers                |
 
@@ -152,7 +152,8 @@ omarchy-shell datebook add "2026-10-02 09:00 Standup !weekly"
 omarchy-shell datebook list 2026-10-02
 omarchy-shell datebook upcoming 30
 omarchy-shell datebook select 2026-10-02
-omarchy-shell datebook month 1          # page forward a month
+omarchy-shell datebook week 1           # roll the window forward a week
+omarchy-shell datebook month 1          # jump to the next month
 omarchy-shell datebook today
 omarchy-shell datebook page year ""          # month | year | detail <id> | compose [id]
 omarchy-shell datebook event 20261002-3f2a   # one event, as the detail page sees it
@@ -165,11 +166,16 @@ omarchy-shell datebook path
 
 ## Where this differs from the mockup
 
+- The grid **rolls three weeks from the current one** rather than showing a whole
+  month — which is what the mockup itself shows (weeks 39, 40, 41), and the
+  pager under it moves by a week, not a month.
 - The **WEEKS / YEAR switch sits under the year meter**, not in the weekday row.
   In the mockup it shares that row with the weekday letters, which pushes them
   off the columns they head; with the switch moved, they line up.
 - The **year meter is a meter**: a dim track with the elapsed part lit. The
   mockup draws it fully lit at 73%.
+- The **masthead runs smaller** than the mockup's 46px, which reads outsized on
+  a bar popup.
 - **Sunday-first** in the mockup; this defaults to Monday-first
   (`weekStartsMonday`), which is the local convention here.
 - The mockup is set in one tight grotesque. `displayFont: auto` picks the first

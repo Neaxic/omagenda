@@ -70,6 +70,7 @@ Panel {
   readonly property int viewYear: book ? book.viewYear : new Date().getFullYear()
   readonly property int viewMonth: book ? book.viewMonth : new Date().getMonth()
   readonly property var weeks: book ? book.weeks : []
+  readonly property string windowLabel: book ? book.windowLabel : ""
   readonly property var yearMonths: book ? book.yearMonths : []
   readonly property var dayEvents: book ? book.selectedEvents : []
   readonly property int todayCount: book ? book.todayEvents.length : 0
@@ -121,6 +122,8 @@ Panel {
 
   // --- actions ------------------------------------------------------------------
   function stepMonth(delta) { if (book) book.stepMonth(delta) }
+  function stepWeeks(delta) { if (book) book.stepWeeks(delta) }
+  function stepYear(delta) { if (book) book.stepYear(delta) }
   function selectDay(iso) { if (book) book.select(iso) }
   function goToday() { if (book) book.goToday() }
   function stepDay(delta) { if (book) book.select(Model.shiftISO(selectedISO, delta)) }
@@ -208,6 +211,7 @@ Panel {
           if (dy !== 0) root.stepMonth(dy > 0 ? 4 : -4)
           return
         }
+
         if (!root.onCalendar) return
         if (dx !== 0) root.stepDay(dx > 0 ? 1 : -1)
         if (dy !== 0) root.stepDay(dy > 0 ? 7 : -7)
@@ -217,8 +221,8 @@ Panel {
         if (!root.onCalendar) return
         var key = String(text).toLowerCase()
         if (key === "t") root.goToday()
-        else if (key === "n" || key === "]") root.stepMonth(1)
-        else if (key === "p" || key === "[") root.stepMonth(-1)
+        else if (key === "n" || key === "]") root.page === "year" ? root.stepYear(1) : root.stepWeeks(1)
+        else if (key === "p" || key === "[") root.page === "year" ? root.stepYear(-1) : root.stepWeeks(-1)
         else if (key === "y") root.showPage(root.page === "year" ? "month" : "year", "")
         else if (key === "a") root.startCompose("")
         else if (key === "o") root.openFile()
@@ -454,13 +458,13 @@ Panel {
             anchors.margins: -Style.space(10)
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.stepMonth(-1)
+            onClicked: root.stepWeeks(-1)
           }
         }
 
         Text {
           anchors.centerIn: parent
-          text: Model.upperMonth(root.viewYear, root.viewMonth)
+          text: root.windowLabel
           color: tokens.dim
           font.family: tokens.fontFamily
           font.pixelSize: tokens.labelSize
@@ -482,7 +486,7 @@ Panel {
             anchors.margins: -Style.space(10)
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.stepMonth(1)
+            onClicked: root.stepWeeks(1)
           }
         }
       }
@@ -548,7 +552,7 @@ Panel {
             anchors.margins: -Style.space(10)
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.stepMonth(-12)
+            onClicked: root.stepYear(-1)
           }
         }
 
@@ -576,7 +580,7 @@ Panel {
             anchors.margins: -Style.space(10)
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.stepMonth(12)
+            onClicked: root.stepYear(1)
           }
         }
       }

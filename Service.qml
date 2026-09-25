@@ -37,7 +37,8 @@ Item {
   readonly property int barMaxTitle: Math.round(setting("barMaxTitle", 18))
   readonly property bool weekStartsMonday: setting("weekStartsMonday", true) !== false
   readonly property bool showWeekNumbers: setting("showWeekNumbers", true) !== false
-  readonly property bool showAdjacentMonths: setting("showAdjacentMonths", true) !== false
+  // How many weeks the rolling grid shows, counting the one we are standing in.
+  readonly property int weeksShown: Math.max(1, Math.min(8, Math.round(setting("weeksShown", 3))))
   readonly property bool use24Hour: setting("use24Hour", true) !== false
   readonly property int upcomingDays: Math.max(1, Math.round(setting("upcomingDays", 14)))
 
@@ -57,10 +58,13 @@ Item {
     var iso = Model.toISO(now)
     var minutes = now.getHours() * 60 + now.getMinutes()
     if (iso !== todayISO) {
+      // Midnight: a window that was sitting on today rolls forward with it.
+      var wasOnToday = selectedISO === todayISO
       todayISO = iso
-      // A day that rolls over while the popup sits open should follow along.
-      if (viewYear === now.getFullYear() && viewMonth === now.getMonth() && selectedISO !== iso)
+      if (wasOnToday) {
+        showWeekOf(iso)
         selectedISO = iso
+      }
     }
     if (minutes !== nowMinutes) nowMinutes = minutes
   }
@@ -74,11 +78,44 @@ Item {
   }
 
   // --- view state -------------------------------------------------------------
-  // Which month the grid is showing and which day the agenda is for. Shared, so
-  // paging the calendar on one monitor pages it on the other too.
-  property int viewYear: new Date().getFullYear()
-  property int viewMonth: new Date().getMonth()
+  // The grid rolls: it opens on the week `anchorISO` falls in and runs forward.
+  // Past weeks are gone rather than greyed, so the window is always the days
+  // still ahead of you. Both this and the selected day are shared, so paging on
+  // one monitor pages the other too.
+  property string anchorISO: Model.startOfWeek(Model.todayISO(), true)
   property string selectedISO: Model.todayISO()
+
+  readonly property string windowEndISO: Model.shiftISO(anchorISO, weeksShown * 7 - 1)
+
+  // The masthead, the year page and the meter all follow the selected day.
+  readonly property var selectedDate: Model.fromISO(selectedISO)
+  readonly property int viewYear: selectedDate ? selectedDate.getFullYear() : new Date().getFullYear()
+  readonly property int viewMonth: selectedDate ? selectedDate.getMonth() : new Date().getMonth()
+
+  function inWindow(iso) {
+    return Model.isISODate(iso) && iso >= anchorISO && iso <= windowEndISO
+  }
+
+  function showWeekOf(iso) {
+    if (!Model.isISODate(iso)) return false
+    anchorISO = Model.startOfWeek(iso, weekStartsMonday)
+    return true
+  }
+
+  // Paging carries the selection with it, so the masthead never names a day the
+  // grid has scrolled past.
+  function stepWeeks(delta) {
+    var steps = Math.round(delta) * 7
+    anchorISO = Model.shiftISO(anchorISO, steps)
+    selectedISO = Model.shiftISO(selectedISO, steps)
+  }
+
+  function stepYear(delta) {
+    showMonth(viewYear + Math.round(delta), viewMonth)
+  }
+
+  // The week opens on a different day now, so the anchor has to follow.
+  onWeekStartsMondayChanged: anchorISO = Model.startOfWeek(anchorISO, weekStartsMonday)
 
   // Which page the popup is on. It lives here with the rest of the view state so
   // both monitors agree, and so the pages can be driven over IPC for testing.
@@ -94,8 +131,7 @@ Item {
   }
 
   function showMonth(year, month) {
-    viewYear = year
-    viewMonth = month
+    select(Model.toISO(new Date(year, month, 1)))
   }
 
   function stepMonth(delta) {
@@ -106,14 +142,16 @@ Item {
   function select(iso) {
     if (!Model.isISODate(iso)) return false
     selectedISO = iso
-    var date = Model.fromISO(iso)
-    if (date) showMonth(date.getFullYear(), date.getMonth())
+    // Only re-anchor when the day is off the window; clicking inside it must
+    // not make the grid jump under the pointer.
+    if (!inWindow(iso)) showWeekOf(iso)
     return true
   }
 
   function goToday() {
     tick()
-    select(todayISO)
+    showWeekOf(todayISO)
+    selectedISO = todayISO
   }
 
   // --- events -----------------------------------------------------------------
@@ -121,19 +159,21 @@ Item {
   property bool loaded: false
   property string lastError: ""
 
-  readonly property var monthCounts: Model.countsForMonth(events, viewYear, viewMonth)
+  readonly property var windowCounts: Model.countsInRange(events, anchorISO, weeksShown * 7)
   readonly property var yearCounts: Model.countsInRange(events, viewYear + "-01-01", 366)
   readonly property var selectedEvents: Model.eventsOn(events, selectedISO)
   readonly property var todayEvents: Model.eventsOn(events, todayISO)
   readonly property var upcomingEvents: Model.upcoming(events, todayISO, upcomingDays)
   readonly property var next: Model.nextOccurrence(events, todayISO, nowMinutes)
 
-  readonly property var weeks: Model.monthWeeks(viewYear, viewMonth, {
+  readonly property var weeks: Model.weeksFrom(anchorISO, weeksShown, {
     mondayFirst: weekStartsMonday,
-    showAdjacentMonths: showAdjacentMonths,
     todayISO: todayISO,
-    counts: monthCounts
+    counts: windowCounts
   })
+
+  // "SEPTEMBER 2026", or "SEP – OCT 2026" once the window straddles two.
+  readonly property string windowLabel: Model.windowLabel(anchorISO, windowEndISO)
 
   readonly property var yearMonths: Model.yearMonths(viewYear, {
     mondayFirst: weekStartsMonday,
@@ -299,6 +339,7 @@ Item {
       return JSON.stringify({
         today: root.todayISO,
         selected: root.selectedISO,
+        window: root.anchorISO + ".." + root.windowEndISO,
         view: root.viewYear + "-" + Model.pad2(root.viewMonth + 1),
         loaded: root.loaded,
         events: root.events.length,
@@ -334,6 +375,13 @@ Item {
       var n = parseInt(delta, 10)
       root.stepMonth(isFinite(n) ? n : 0)
       return root.viewYear + "-" + Model.pad2(root.viewMonth + 1)
+    }
+
+    // Rolls the grid by whole weeks, which is what the pager under it does.
+    function week(delta: string): string {
+      var n = parseInt(delta, 10)
+      root.stepWeeks(isFinite(n) ? n : 0)
+      return root.anchorISO + ".." + root.windowEndISO
     }
 
     function today(): string { root.goToday(); return root.todayISO }
