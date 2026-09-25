@@ -44,6 +44,8 @@ Panel {
     fontFamily: root.displayFamily
     displayFamily: root.displayFamily
     glyphFamily: root.fontFamily
+    themePalette: root.book ? root.book.themePalette : ({})
+    paletteMode: root.book ? root.book.eventPalette : "spread"
   }
 
   // --- service ------------------------------------------------------------------
@@ -346,40 +348,25 @@ Panel {
         onDayActivated: function(iso) { root.selectDay(iso); root.startCompose("") }
       }
 
-      Item { width: 1; height: Style.space(24) }
+      Item { width: 1; height: Style.space(18) }
 
       Rectangle { width: parent.width; height: 1; color: tokens.rule }
 
-      Item { width: 1; height: Style.space(20) }
+      Item { width: 1; height: Style.space(14) }
 
       // --- the selected day ----------------------------------------------
-      Item {
+      // Just the date: the count line said what the bands already say, and the
+      // + duplicated NEW EVENT at the foot of the page.
+      Text {
         width: parent.width
-        height: Math.max(dayHeading.implicitHeight, addButton.height)
-
-        // The count line is gone: the bands below already say how many there are.
-        Text {
-          id: dayHeading
-          anchors.left: parent.left
-          anchors.verticalCenter: parent.verticalCenter
-          text: Model.dayHeading(root.selectedISO)
-          color: tokens.dim
-          font.family: tokens.fontFamily
-          font.pixelSize: tokens.labelSize
-          font.letterSpacing: tokens.trackedSpacing
-        }
-
-        OutlineButton {
-          id: addButton
-          anchors.right: parent.right
-          anchors.verticalCenter: parent.verticalCenter
-          chrome: tokens
-          glyph: "\u{F0415}"                       // plus
-          onClicked: root.startCompose("")
-        }
+        text: Model.dayHeading(root.selectedISO)
+        color: tokens.dim
+        font.family: tokens.fontFamily
+        font.pixelSize: tokens.labelSize
+        font.letterSpacing: tokens.trackedSpacing
       }
 
-      Item { width: 1; height: root.dayEvents.length > 0 ? Style.space(25) : 0 }
+      Item { width: 1; height: root.dayEvents.length > 0 ? Style.space(13) : 0 }
 
       // --- the agenda ------------------------------------------------------
       // A day with nothing on it shows nothing at all: an empty band is just

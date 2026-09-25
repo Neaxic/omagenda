@@ -18,6 +18,7 @@ Column {
   signal cancelled()
 
   property string repeatValue: "none"
+  property string colorValue: "none"
 
   spacing: Style.space(20)
 
@@ -28,6 +29,7 @@ Column {
       lengthField.text = ""
       placeField.text = ""
       repeatValue = "none"
+      colorValue = "none"
       return
     }
     titleField.text = occurrence.title
@@ -35,6 +37,7 @@ Column {
     lengthField.text = occurrence.durationMin > 0 ? String(occurrence.durationMin) : ""
     placeField.text = occurrence.location
     repeatValue = occurrence.repeat
+    colorValue = occurrence.color
   }
 
   function focusTitle() { titleField.field.forceActiveFocus() }
@@ -46,6 +49,7 @@ Column {
       time: timeField.text,
       durationMin: parseInt(lengthField.text, 10) || 0,
       location: placeField.text,
+      color: root.colorValue,
       repeat: root.repeatValue
     })
   }
@@ -115,6 +119,25 @@ Column {
     placeholder: "Studio 2"
     onSubmitted: root.submit()
     onEscaped: root.cancelled()
+  }
+
+  Column {
+    width: parent.width
+    spacing: Style.space(8)
+
+    Text {
+      text: "COLOUR"
+      color: root.chrome ? root.chrome.dim : "transparent"
+      font.family: root.chrome ? root.chrome.fontFamily : "monospace"
+      font.pixelSize: root.chrome ? root.chrome.labelSize : 10
+      font.letterSpacing: root.chrome ? root.chrome.trackedSpacing : 1
+    }
+
+    ColorPicker {
+      chrome: root.chrome
+      current: root.colorValue
+      onPicked: function(key) { root.colorValue = key }
+    }
   }
 
   Column {

@@ -134,13 +134,15 @@ Column {
               spacing: Style.space(4)
 
               Repeater {
+                // One dot per event, each in that event's own colour.
                 model: Math.min(3, dayCell.day.count)
 
                 delegate: Rectangle {
+                  required property int index
                   width: root.chrome ? root.chrome.dot : 4
                   height: width
                   radius: width / 2
-                  color: root.chrome ? root.chrome.body : "transparent"
+                  color: root.chrome ? root.chrome.eventInk(dayCell.day.colors[index]) : "transparent"
                   opacity: dayCell.day.inMonth ? 1.0 : 0.45
                 }
               }

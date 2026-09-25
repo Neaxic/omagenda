@@ -22,6 +22,31 @@ var WEEKDAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Fri
 var DISPLAY_FAMILIES = ["Inter", "Inter Display", "InterVariable", "Archivo", "Helvetica Neue",
                         "Neue Haas Grotesk Display Pro", "SF Pro Display", "Noto Sans", "Liberation Sans"]
 
+// Event colours are *categorical*, not semantic. Mainstream calendars colour an
+// event by which calendar it came from, and let you override per event from a
+// fixed palette whose names ("Tomato", "Basil", "Peacock") mean nothing on
+// purpose — the bucket is yours to define. So these names are labels, not
+// promises about hue: what each one renders as depends on the theme.
+//
+// `token` is the theme slot it takes in "theme" mode; `slot` is its position on
+// the hue wheel in "spread" mode, where the palette is derived from the theme's
+// accent so the six stay far enough apart to tell at dot size.
+var EVENT_COLORS = [
+  { key: "none", token: "", fallback: "", slot: -1 },
+  { key: "clay", token: "red", fallback: "#c07a6a", slot: 0 },
+  { key: "sand", token: "yellow", fallback: "#c7a76a", slot: 1 },
+  { key: "moss", token: "green", fallback: "#7fa87f", slot: 2 },
+  { key: "sky", token: "cyan", fallback: "#6fa8b0", slot: 3 },
+  { key: "slate", token: "blue", fallback: "#7f95c0", slot: 4 },
+  { key: "plum", token: "magenta", fallback: "#a98bbd", slot: 5 }
+]
+
+// Stores written before the palette was named this way.
+var COLOR_ALIASES = {
+  red: "clay", yellow: "sand", green: "moss",
+  cyan: "sky", blue: "slate", magenta: "plum", accent: "clay"
+}
+
 var REPEATS = ["none", "daily", "weekly", "monthly", "yearly"]
 var REPEAT_LABELS = {
   none: "once", daily: "every day", weekly: "every week",
@@ -127,7 +152,7 @@ function monthWeeks(year, month, options) {
   var mondayFirst = o.mondayFirst !== false
   var withAdjacent = o.showAdjacentMonths !== false
   var today = o.todayISO || todayISO()
-  var counts = o.counts || {}
+  var marks = o.marks || {}
 
   var first = new Date(year, month, 1)
   var total = daysInMonth(year, month)
@@ -147,19 +172,21 @@ function monthWeeks(year, month, options) {
 
       var inMonth = n >= 1 && n <= total
       if (!inMonth && !withAdjacent) {
-        days.push({ iso: "", day: 0, inMonth: false, today: false, weekend: false, count: 0 })
+        days.push({ iso: "", day: 0, inMonth: false, today: false, weekend: false, count: 0, colors: [] })
         continue
       }
       var date = new Date(year, month, n)   // rolls into the neighbouring month
       var iso = toISO(date)
       var dow = date.getDay()
+      var mark = marks[iso]
       days.push({
         iso: iso,
         day: date.getDate(),
         inMonth: inMonth,
         today: iso === today,
         weekend: dow === 0 || dow === 6,
-        count: counts[iso] || 0
+        count: mark ? mark.count : 0,
+        colors: mark ? mark.colors : []
       })
     }
     weeks.push({
@@ -198,7 +225,7 @@ function weeksFrom(startISO, count, options) {
   var o = options || {}
   var mondayFirst = o.mondayFirst !== false
   var today = o.todayISO || todayISO()
-  var counts = o.counts || {}
+  var marks = o.marks || {}
   var total = Math.max(1, Math.min(12, Math.round(count || 3)))
 
   var first = startOfWeek(startISO, mondayFirst)
@@ -214,13 +241,15 @@ function weeksFrom(startISO, count, options) {
       var date = fromISO(iso)
       if (!date) continue
       var dow = date.getDay()
+      var mark = marks[iso]
       days.push({
         iso: iso,
         day: date.getDate(),
         inMonth: date.getMonth() === anchorMonth && date.getFullYear() === anchorYear,
         today: iso === today,
         weekend: dow === 0 || dow === 6,
-        count: counts[iso] || 0
+        count: mark ? mark.count : 0,
+        colors: mark ? mark.colors : []
       })
     }
     weeks.push({ week: isoWeek(fromISO(shiftISO(first, w * 7))), days: days })
@@ -255,7 +284,7 @@ function yearMonths(year, options) {
         mondayFirst: (options || {}).mondayFirst !== false,
         showAdjacentMonths: false,
         todayISO: (options || {}).todayISO,
-        counts: (options || {}).counts || {}
+        marks: (options || {}).marks || {}
       })
     })
   }
@@ -276,7 +305,103 @@ function yearProgress(year, todayIso) {
   return Math.max(0, Math.min(1, days / total))
 }
 
-// ------------------------------------------------------------------- events
+// The theme's colors.toml, as { token: "#rrggbb" }.
+function parsePalette(text) {
+  var out = {}
+  var re = /^\s*([a-z_]+)\s*=\s*"(#[0-9a-fA-F]{6})(?:[0-9a-fA-F]{2})?"/gm
+  var m
+  while ((m = re.exec(String(text || ""))) !== null) out[m[1]] = m[2].toLowerCase()
+  return out
+}
+
+function normalizeColor(value) {
+  var key = trim(value).toLowerCase()
+  for (var i = 0; i < EVENT_COLORS.length; i++) if (EVENT_COLORS[i].key === key) return key
+  return COLOR_ALIASES[key] || "none"
+}
+
+function colorEntry(key) {
+  var wanted = normalizeColor(key)
+  for (var i = 0; i < EVENT_COLORS.length; i++) if (EVENT_COLORS[i].key === wanted) return EVENT_COLORS[i]
+  return null
+}
+
+// --- hue maths ----------------------------------------------------------------
+
+function hexToHsl(hex) {
+  var clean = trim(hex).replace("#", "")
+  if (!/^[0-9a-fA-F]{6}/.test(clean)) return null
+  var r = parseInt(clean.slice(0, 2), 16) / 255
+  var g = parseInt(clean.slice(2, 4), 16) / 255
+  var b = parseInt(clean.slice(4, 6), 16) / 255
+  var max = Math.max(r, g, b), min = Math.min(r, g, b)
+  var l = (max + min) / 2
+  if (max === min) return { h: 0, s: 0, l: l }
+  var d = max - min
+  var s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  var h
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+  else if (max === g) h = ((b - r) / d + 2) / 6
+  else h = ((r - g) / d + 4) / 6
+  return { h: h * 360, s: s, l: l }
+}
+
+function hslToHex(h, s, l) {
+  var hue = ((h % 360) + 360) % 360 / 360
+  function channel(p, q, t) {
+    if (t < 0) t += 1
+    if (t > 1) t -= 1
+    if (t < 1 / 6) return p + (q - p) * 6 * t
+    if (t < 1 / 2) return q
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
+    return p
+  }
+  var r, g, b
+  if (s === 0) { r = g = b = l }
+  else {
+    var q = l < 0.5 ? l * (1 + s) : l + s - l * s
+    var p = 2 * l - q
+    r = channel(p, q, hue + 1 / 3)
+    g = channel(p, q, hue)
+    b = channel(p, q, hue - 1 / 3)
+  }
+  function hex2(v) {
+    var n = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16)
+    return n.length < 2 ? "0" + n : n
+  }
+  return "#" + hex2(r) + hex2(g) + hex2(b)
+}
+
+// Six hues spread evenly from the theme's accent, at a saturation and lightness
+// that keep them legible on the panel. A near-grey accent still yields colours:
+// without a floor on saturation the "palette" would be six greys.
+function spreadHex(accentHex, slot, count, dark) {
+  var base = hexToHsl(accentHex) || { h: 210, s: 0.35, l: 0.62 }
+  var total = Math.max(1, Math.round(count || 6))
+  var sat = Math.max(0.34, Math.min(0.68, base.s))
+  var lum = dark === false
+    ? Math.max(0.36, Math.min(0.52, base.l))
+    : Math.max(0.56, Math.min(0.74, base.l))
+  return hslToHex(base.h + (360 / total) * slot, sat, lum)
+}
+
+// What an event's colour resolves to, or "" for an uncoloured event, which the
+// view then draws in its ordinary ink.
+//   mode "spread" (default) — derived from the accent, maximally distinct
+//   mode "theme"            — the theme's own red/green/blue/... slots
+function colorHex(palette, key, mode, dark) {
+  var entry = colorEntry(key)
+  if (!entry || entry.key === "none") return ""
+  if (String(mode) === "theme") {
+    var themed = palette ? palette[entry.token] : ""
+    return themed || entry.fallback
+  }
+  var accent = (palette && palette.accent) ? palette.accent : ""
+  if (accent === "") return entry.fallback
+  return spreadHex(accent, entry.slot, 6, dark !== false)
+}
+
+// ------------------------------------------------------------------- events// ------------------------------------------------------------------- events
 
 function normalizeTime(value) {
   var s = trim(value).replace(/\./g, ":")
@@ -315,6 +440,7 @@ function normalizeEvent(raw) {
     durationMin: Math.max(0, Math.round(Number(raw.durationMin) || 0)),
     notes: trim(raw.notes),
     location: trim(raw.location),
+    color: normalizeColor(raw.color),
     repeat: normalizeRepeat(raw.repeat),
     // "" = forever. Only meaningful with a repeat.
     until: isISODate(raw.until) && fromISO(raw.until) ? trim(raw.until) : ""
@@ -340,7 +466,7 @@ function ensureIds(events, randomFn) {
     seen[id] = true
     out.push({
       id: id, title: e.title, date: e.date, time: e.time, durationMin: e.durationMin,
-      notes: e.notes, location: e.location, repeat: e.repeat, until: e.until
+      notes: e.notes, location: e.location, color: e.color, repeat: e.repeat, until: e.until
     })
   }
   return out
@@ -377,6 +503,7 @@ function serializeStore(events) {
     if (e.durationMin > 0) out.durationMin = e.durationMin
     if (e.notes !== "") out.notes = e.notes
     if (e.location !== "") out.location = e.location
+    if (e.color !== "none") out.color = e.color
     if (e.repeat !== "none") out.repeat = e.repeat
     if (e.until !== "") out.until = e.until
     list.push(out)
@@ -437,7 +564,7 @@ function eventsOn(events, iso) {
     var e = events[i]
     out.push({
       id: e.id, title: e.title, date: e.date, iso: iso, time: e.time,
-      durationMin: e.durationMin, notes: e.notes, location: e.location,
+      durationMin: e.durationMin, notes: e.notes, location: e.location, color: e.color,
       repeat: e.repeat, until: e.until,
       recurring: e.repeat !== "none" && e.date !== iso
     })
@@ -445,21 +572,39 @@ function eventsOn(events, iso) {
   return sortEvents(out)
 }
 
-// iso -> number of occurrences, over an inclusive date range. The month grid
-// uses it for its per-day dots; `days` caps the walk.
-function countsInRange(events, fromIso, days) {
-  var counts = {}
+// iso -> { count, colors: [key, ...] } over an inclusive date range. The grid
+// draws one dot per event in the day's own colours, so it needs the keys in
+// display order, not just a tally. `days` caps the walk.
+function marksInRange(events, fromIso, days) {
+  var marks = {}
   var span = Math.max(0, Math.min(400, Math.round(days)))
   var iso = fromIso
   for (var d = 0; d < span; d++) {
-    var n = eventsOn(events, iso).length
-    if (n > 0) counts[iso] = n
+    var onDay = eventsOn(events, iso)
+    if (onDay.length > 0) {
+      var colors = []
+      for (var i = 0; i < onDay.length; i++) colors.push(onDay[i].color)
+      marks[iso] = { count: onDay.length, colors: colors }
+    }
     iso = shiftISO(iso, 1)
   }
+  return marks
+}
+
+// The same walk when only the tally matters (the year page's miniatures).
+function countsInRange(events, fromIso, days) {
+  var marks = marksInRange(events, fromIso, days)
+  var counts = {}
+  for (var iso in marks) counts[iso] = marks[iso].count
   return counts
 }
 
-// Counts for a month plus the adjacent-month days the grid shows.
+// Marks for a month plus the adjacent-month days the grid shows.
+function marksForMonth(events, year, month) {
+  var start = shiftISO(toISO(new Date(year, month, 1)), -7)
+  return marksInRange(events, start, daysInMonth(year, month) + 14)
+}
+
 function countsForMonth(events, year, month) {
   var start = shiftISO(toISO(new Date(year, month, 1)), -7)
   return countsInRange(events, start, daysInMonth(year, month) + 14)
@@ -694,6 +839,8 @@ if (typeof module !== "undefined") {
     WEEKDAY_LONG: WEEKDAY_LONG,
     DISPLAY_FAMILIES: DISPLAY_FAMILIES,
     REPEATS: REPEATS,
+    EVENT_COLORS: EVENT_COLORS,
+    COLOR_ALIASES: COLOR_ALIASES,
     REPEAT_LABELS: REPEAT_LABELS,
     BAR_MODES: BAR_MODES,
     BAR_ICONS: BAR_ICONS,
@@ -733,6 +880,15 @@ if (typeof module !== "undefined") {
     eventsOn: eventsOn,
     countsInRange: countsInRange,
     countsForMonth: countsForMonth,
+    marksInRange: marksInRange,
+    marksForMonth: marksForMonth,
+    parsePalette: parsePalette,
+    normalizeColor: normalizeColor,
+    colorHex: colorHex,
+    colorEntry: colorEntry,
+    hexToHsl: hexToHsl,
+    hslToHex: hslToHex,
+    spreadHex: spreadHex,
     upcoming: upcoming,
     nextOccurrence: nextOccurrence,
     parseAddInput: parseAddInput,

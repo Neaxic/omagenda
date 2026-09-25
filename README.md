@@ -21,10 +21,9 @@ one; the year page always opens a month that way.
 │   40 │ 28 ·│ 29 ··│ 30 │  1  │  2 ·│  3  │  4              │
 │   41 │  5 ·│  6 · │  7 │  8  │  9  │ 10  │ 11      ← faded │
 │  ───────────────────────────────────────────────────────── │
-│  SATURDAY, SEPTEMBER 26                                ┌─┐ │
-│                                                        │+│ │
-│  ───────────────────────────────────────────────────── └─┘ │
-│  Design review                                           ›  │
+│  SATURDAY, SEPTEMBER 26                                     │
+│  ───────────────────────────────────────────────────────── │
+│ ▌Design review                                           ›  │
 │   14:00 – 15:00 · Studio 2                                  │
 │  ───────────────────────────────────────────────────────── │
 │  «  ‹            SEP – OCT 2026                     ›   »   │
@@ -34,8 +33,8 @@ one; the year page always opens a month that way.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-A day with nothing on it shows its heading and the `+` and stops there — no
-empty band, no count line. The bands below say how many there are.
+A day with nothing on it shows its heading and stops there — no empty band, no
+count line. The bands below say how many there are.
 
 Four pages, all inside the one popup:
 
@@ -89,7 +88,7 @@ it on the other too.
   "version": 1,
   "events": [
     { "id": "20260926-3f2a", "title": "Design review", "date": "2026-09-26", "time": "14:00",
-      "durationMin": 60, "location": "Studio 2" },
+      "durationMin": 60, "location": "Studio 2", "color": "sky" },
     { "id": "20260101-8b11", "title": "Rent", "date": "2026-01-01", "repeat": "monthly" },
     { "id": "20260405-01cd", "title": "Standup", "date": "2026-04-05", "time": "09:00",
       "repeat": "weekly", "until": "2026-12-18", "notes": "room 2" }
@@ -100,6 +99,8 @@ it on the other too.
 - `date` and `time` are local; the file holds no timezones.
 - `time` omitted or `""` means all day, and sorts ahead of timed events.
 - `durationMin` gives the card its "14:00 – 15:00"; `location` its place.
+- `color` is one of `clay`, `sand`, `moss`, `sky`, `slate`, `plum`; omitted means
+  no colour. Older stores using terminal names (`green`, `magenta`, …) still read.
 - `repeat` is `daily`, `weekly`, `monthly` or `yearly`, walking forward from
   `date` only. A monthly repeat on the 31st simply has no occurrence in a
   30-day month rather than sliding to the 30th.
@@ -121,7 +122,7 @@ newer in-panel edit.
 | YEAR         | Twelve miniatures; click a month to open it whole   |
 | `«` `»`      | Page a month, keeping the day of the month where it can |
 | Event band   | Click anywhere on it for the detail page, then EDIT or DELETE |
-| `+` / NEW EVENT | The compose form: title, date, time, minutes, place, repeat |
+| NEW EVENT    | The compose form: title, date, time, minutes, place, colour, repeat |
 
 Keys while the popup has focus: arrows walk days and weeks (months on the year
 page), `Return`/`a` opens the compose form, `t` today, `n`/`p` step the grid — a
@@ -129,6 +130,46 @@ week rolling, a month expanded, a year on the year page — `,`/`.` page a month
 `m` expands or collapses the grid, `y` toggles the year page, `o` opens
 `events.json`. `Esc` steps back a page, or closes the popup from the
 calendar.
+
+## Colour
+
+Events can carry a colour, and the day's dots take it, so a day with two events
+shows two marks rather than two of the same.
+
+Worth knowing what the colour actually means, because mainstream calendars are
+less principled here than they look:
+
+- **In Google, Apple and Outlook, colour means "which calendar"** — Personal,
+  Work, a shared team calendar, a subscribed holidays feed. Every event inherits
+  its calendar's colour. The colour answers *which bucket*, never *what kind of
+  thing*.
+- **Per-event overrides come from a fixed palette with meaningless names.**
+  Google's are Tomato, Flamingo, Tangerine, Banana, Sage, Basil, Peacock,
+  Blueberry, Lavender, Grape and Graphite. Outlook calls them Categories and
+  ships them named "Red category" until you rename them. The names are
+  deliberately empty: the meaning is whatever the user decides.
+- **There is no shared semantics.** Red is not "urgent" and green is not "free"
+  in any calendar worth the name. The only conventions that *are* near-universal
+  are structural, not chromatic: today is marked, declined events render hollow
+  or struck, tentative is hatched, all-day sits above timed.
+
+So the single rule that matters is consistency — one bucket, one colour — plus
+enough separation that the buckets are still distinct at dot size. Datebook
+follows the same idea: six slots named `clay`, `sand`, `moss`, `sky`, `slate`
+and `plum`, which are labels rather than promises about hue, plus `none` for an
+event that takes the ordinary ink. Pick the meanings yourself.
+
+Where the hues come from is a setting:
+
+| `eventPalette` | What you get                                                    |
+|----------------|-----------------------------------------------------------------|
+| `spread` (default) | Six hues spread evenly from the theme's accent, at the accent's own saturation and lightness. Harmonises with the theme *and* stays distinguishable. |
+| `theme`        | The theme's literal `red`/`yellow`/`green`/`cyan`/`blue`/`magenta` slots. Truest to the theme, but many themes leave these close together — this one defines `blue` identical to its accent and `yellow` at 41% lightness. |
+
+`spread` exists because of exactly that: a muted theme's own palette can collapse
+into three near-identical colours, which is worse than no colour coding at all.
+A near-grey accent still yields six hues, since the derivation floors saturation
+rather than handing back six greys.
 
 ## Settings
 
@@ -146,6 +187,7 @@ schema describes:
 | `weeksShown`         | `3`        | Weeks in the grid, counting the one you are in (1–8) |
 | `use24Hour`          | `true`     | 24-hour times                                  |
 | `upcomingDays`       | `14`       | Window the upcoming list covers                |
+| `eventPalette`       | `spread`   | Where event colours come from (see **Colour**) |
 
 ## IPC
 
@@ -166,7 +208,7 @@ omarchy-shell datebook month 1          # jump a month, keeping the day
 omarchy-shell datebook today
 omarchy-shell datebook page year ""          # month | year | detail <id> | compose [id]
 omarchy-shell datebook event 20261002-3f2a   # one event, as the detail page sees it
-omarchy-shell datebook compose "" '{"title":"Sprint planning","date":"2026-09-28","time":"10:30","durationMin":90,"location":"Room 4","repeat":"weekly"}'
+omarchy-shell datebook compose "" '{"title":"Sprint planning","date":"2026-09-28","time":"10:30","durationMin":90,"location":"Room 4","color":"moss","repeat":"weekly"}'
 omarchy-shell datebook remove 20261002-3f2a
 omarchy-shell datebook setOption showWeekNumbers false
 omarchy-shell datebook toggle           # open/close the popup
@@ -175,8 +217,10 @@ omarchy-shell datebook path
 
 ## Where this differs from the mockup
 
-- The day heading **drops the "1 event" line** under it, and an empty day drops
-  its band altogether rather than reading "Nothing planned".
+- The day heading **drops the "1 event" line** and the **`+` button** — NEW EVENT
+  at the foot of the page already does that job — and an empty day drops its band
+  altogether rather than reading "Nothing planned".
+- Events can be **colour-coded**, which the mockup does not show at all.
 - The grid **rolls three weeks from the current one** rather than showing a whole
   month — which is what the mockup itself shows (weeks 39, 40, 41), and the
   pager under it moves by a week, not a month.

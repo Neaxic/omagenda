@@ -37,7 +37,8 @@
       "use24Hour": true,
       "upcomingDays": 14,
       "displayFont": "auto",
-      "weeksShown": 3
+      "weeksShown": 3,
+      "eventPalette": "spread"
     },
     "schema": [
       {
@@ -101,6 +102,16 @@
         "max": 8,
         "step": 1,
         "defaultValue": 3
+      },
+      {
+        "key": "eventPalette",
+        "type": "enum",
+        "label": "Event colours: spread (six hues off the theme accent) or theme (the theme's own slots)",
+        "options": [
+          "spread",
+          "theme"
+        ],
+        "defaultValue": "spread"
       },
       {
         "key": "use24Hour",

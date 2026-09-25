@@ -59,13 +59,73 @@ test("monthWeeks blanks the neighbours when adjacent months are off", () => {
   assert.equal(weeks[0].days[1].iso, "2026-09-01")
 })
 
-test("monthWeeks carries per-day counts", () => {
+test("monthWeeks carries per-day marks", () => {
   const events = [ev({ date: "2026-09-10" }), ev({ id: "y", date: "2026-09-10", title: "Other" })]
-  const counts = M.countsForMonth(events, 2026, 8)
-  const weeks = M.monthWeeks(2026, 8, { counts })
+  const marks = M.marksForMonth(events, 2026, 8)
+  const weeks = M.monthWeeks(2026, 8, { marks })
   const all = weeks.reduce((acc, w) => acc.concat(w.days), [])
   assert.equal(all.find(d => d.iso === "2026-09-10").count, 2)
   assert.equal(all.find(d => d.iso === "2026-09-11").count, 0)
+})
+
+test("marks carry each day's event colours in display order", () => {
+  const events = [
+    ev({ id: "a", date: "2026-09-29", time: "14:00", title: "PM", color: "moss" }),
+    ev({ id: "b", date: "2026-09-29", time: "09:00", title: "AM", color: "plum" }),
+    ev({ id: "c", date: "2026-09-29", time: "11:00", title: "Plain" })
+  ]
+  const marks = M.marksInRange(events, "2026-09-29", 1)
+  assert.equal(marks["2026-09-29"].count, 3)
+  // Sorted by time, so the colours arrive in the order the day reads.
+  assert.deepEqual(marks["2026-09-29"].colors, ["plum", "none", "moss"])
+  assert.deepEqual(M.countsInRange(events, "2026-09-29", 1), { "2026-09-29": 3 })
+})
+
+test("an event colour is a palette slot that survives the store", () => {
+  assert.equal(M.normalizeEvent({ title: "T", date: "2026-09-26", color: "MOSS" }).color, "moss")
+  assert.equal(M.normalizeEvent({ title: "T", date: "2026-09-26", color: "puce" }).color, "none")
+  assert.equal(M.normalizeEvent({ title: "T", date: "2026-09-26" }).color, "none")
+  // Stores written with the old terminal-colour names still read.
+  assert.equal(M.normalizeEvent({ title: "T", date: "2026-09-26", color: "green" }).color, "moss")
+  const back = M.parseStore(M.serializeStore([ev({ color: "sky" })]))
+  assert.equal(back[0].color, "sky")
+  // An uncoloured event writes no colour key at all.
+  assert.equal(M.serializeStore([ev()]).includes("color"), false)
+})
+
+test("theme mode takes the theme's own slots, spread derives from the accent", () => {
+  const pal = { accent: "#b59790", green: "#87a9b0" }
+  assert.equal(M.colorHex(pal, "moss", "theme"), "#87a9b0")
+  assert.equal(M.colorHex({}, "moss", "theme"), "#7fa87f")   // the built-in fallback
+  assert.equal(M.colorHex(pal, "none", "spread"), "")
+  assert.equal(M.colorHex(pal, "nonsense", "spread"), "")
+  // Spread keeps the accent's character but pushes the hues apart.
+  const spread = M.EVENT_COLORS.slice(1).map(c => M.colorHex(pal, c.key, "spread"))
+  assert.equal(new Set(spread).size, 6)
+  const hues = spread.map(hex => Math.round(M.hexToHsl(hex).h))
+  for (let i = 1; i < hues.length; i++) {
+    const gap = Math.abs(hues[i] - hues[i - 1])
+    assert.ok(gap > 40, `hues ${hues[i - 1]} and ${hues[i]} are too close`)
+  }
+})
+
+test("a near-grey accent still yields colours, not six greys", () => {
+  const spread = M.EVENT_COLORS.slice(1).map(c => M.colorHex({ accent: "#888888" }, c.key, "spread"))
+  assert.equal(new Set(spread).size, 6)
+  spread.forEach(hex => assert.ok(M.hexToHsl(hex).s >= 0.33, hex + " is too grey"))
+})
+
+test("hsl round-trips through hex", () => {
+  const hsl = M.hexToHsl("#87a9b0")
+  assert.equal(M.hslToHex(hsl.h, hsl.s, hsl.l), "#87a9b0")
+  assert.equal(M.hexToHsl("nope"), null)
+})
+
+test("parsePalette reads the theme's colors.toml", () => {
+  const pal = M.parsePalette('mode = "dark"\naccent = "#b59790"\nred = "#c38b7b"\nbad = 3\n')
+  assert.equal(pal.accent, "#b59790")
+  assert.equal(pal.red, "#c38b7b")
+  assert.equal(pal.bad, undefined)
 })
 
 test("startOfWeek finds the day the week opens on", () => {
@@ -98,10 +158,10 @@ test("weeksFrom dims the days that have rolled into the next month", () => {
   assert.equal(weeks[1].days.find(d => d.iso === "2026-10-01").inMonth, false)
 })
 
-test("weeksFrom carries counts and clamps its length", () => {
+test("weeksFrom carries marks and clamps its length", () => {
   const events = [ev({ date: "2026-09-29" }), ev({ id: "b", date: "2026-09-29", title: "Other" })]
-  const counts = M.countsInRange(events, "2026-09-21", 21)
-  const weeks = M.weeksFrom("2026-09-26", 3, { counts })
+  const marks = M.marksInRange(events, "2026-09-21", 21)
+  const weeks = M.weeksFrom("2026-09-26", 3, { marks })
   assert.equal(weeks[1].days.find(d => d.iso === "2026-09-29").count, 2)
   // A missing or zero count means "the default window", and the length is capped.
   assert.equal(M.weeksFrom("2026-09-26", 0, {}).length, 3)

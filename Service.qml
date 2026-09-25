@@ -38,6 +38,8 @@ Item {
   readonly property bool weekStartsMonday: setting("weekStartsMonday", true) !== false
   readonly property bool showWeekNumbers: setting("showWeekNumbers", true) !== false
   // How many weeks the rolling grid shows, counting the one we are standing in.
+  // spread | theme — see Chrome.paletteMode.
+  readonly property string eventPalette: String(setting("eventPalette", "spread")) === "theme" ? "theme" : "spread"
   readonly property int weeksShown: Math.max(1, Math.min(8, Math.round(setting("weeksShown", 3))))
   readonly property bool use24Hour: setting("use24Hour", true) !== false
   readonly property int upcomingDays: Math.max(1, Math.round(setting("upcomingDays", 14)))
@@ -182,9 +184,9 @@ Item {
   property bool loaded: false
   property string lastError: ""
 
-  readonly property var windowCounts: Model.countsInRange(events, anchorISO, weeksShown * 7)
-  readonly property var monthCounts: Model.countsForMonth(events, viewYear, viewMonth)
-  readonly property var yearCounts: Model.countsInRange(events, viewYear + "-01-01", 366)
+  readonly property var windowMarks: Model.marksInRange(events, anchorISO, weeksShown * 7)
+  readonly property var monthMarks: Model.marksForMonth(events, viewYear, viewMonth)
+  readonly property var yearMarks: Model.marksInRange(events, viewYear + "-01-01", 366)
   readonly property var selectedEvents: Model.eventsOn(events, selectedISO)
   readonly property var todayEvents: Model.eventsOn(events, todayISO)
   readonly property var upcomingEvents: Model.upcoming(events, todayISO, upcomingDays)
@@ -195,12 +197,12 @@ Item {
         mondayFirst: weekStartsMonday,
         showAdjacentMonths: true,
         todayISO: todayISO,
-        counts: monthCounts
+        marks: monthMarks
       })
     : Model.weeksFrom(anchorISO, weeksShown, {
         mondayFirst: weekStartsMonday,
         todayISO: todayISO,
-        counts: windowCounts
+        marks: windowMarks
       })
 
   // "SEPTEMBER 2026" for a month, or "SEP – OCT 2026" once a window straddles two.
@@ -211,7 +213,7 @@ Item {
   readonly property var yearMonths: Model.yearMonths(viewYear, {
     mondayFirst: weekStartsMonday,
     todayISO: todayISO,
-    counts: yearCounts
+    marks: yearMarks
   })
 
   // How much of the year on screen has gone, for the masthead meter.
@@ -304,6 +306,7 @@ Item {
       time: values.time,
       durationMin: values.durationMin,
       location: values.location,
+      color: values.color,
       repeat: values.repeat
     }
     if (String(values.title || "").replace(/^\s+|\s+$/g, "") === "") return "Give it a title"
@@ -336,6 +339,19 @@ Item {
   }
 
   function openEventsFile() { Quickshell.execDetached(["xdg-open", eventsPath]) }
+
+  // Event colours are theme palette slots, so they change with the theme rather
+  // than sitting on top of it.
+  // Named themePalette, not palette: QQuickItem already has one.
+  property var themePalette: ({})
+
+  FileView {
+    path: Quickshell.env("HOME") + "/.local/state/omarchy/current/theme/colors.toml"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: root.themePalette = Model.parsePalette(text())
+  }
 
   FileView {
     id: eventsFile

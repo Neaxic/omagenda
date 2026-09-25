@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import "Model.js" as Model
 
 // Datebook's design tokens in one place, so the six view components don't each
 // re-derive them. The values are the ratios measured off the mockup: every ink
@@ -11,6 +12,12 @@ import qs.Commons
 //   strong edge 0.53 · edge 0.26 · rule 0.17 · hairline 0.12 · fill 0.06
 QtObject {
   id: root
+
+  // The theme's colors.toml, for the event palette.
+  property var themePalette: ({})
+  // "spread" derives six hues from the theme accent; "theme" uses the theme's
+  // own colour slots, which on a muted theme can sit very close together.
+  property string paletteMode: "spread"
 
   property color foreground: Color.foreground
   property color accent: Color.accent
@@ -39,6 +46,19 @@ QtObject {
   readonly property color hoverFill: Util.alpha(foreground, 0.09)
   readonly property color meter: Util.alpha(foreground, 0.89)
   readonly property color onInverted: Color.popups.background
+
+  // An event's ink: its own colour when it has one, the ordinary body ink when
+  // it does not, so an uncoloured calendar looks exactly as it did before.
+  readonly property bool darkSurface: onInverted.hslLightness < 0.5
+
+  function eventInk(key) {
+    var hex = eventHex(key)
+    return hex === "" ? body : hex
+  }
+
+  function eventHex(key) {
+    return Model.colorHex(themePalette, key, paletteMode, darkSurface)
+  }
 
   // --- metrics ----------------------------------------------------------------
   // Design pixels from the mockup, run through Style.space() so a theme's

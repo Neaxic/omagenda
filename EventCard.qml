@@ -31,6 +31,18 @@ Item {
       : "transparent"
   }
 
+  // The event's colour, if it has one: a rail inside the band's own padding, so
+  // a coloured and an uncoloured event still line their titles up.
+  Rectangle {
+    anchors.left: parent.left
+    anchors.verticalCenter: parent.verticalCenter
+    width: Math.max(2, Style.space(3))
+    height: parent.height - Style.space(18)
+    visible: root.occurrence && root.chrome
+      && root.chrome.eventHex(root.occurrence.color) !== ""
+    color: root.occurrence && root.chrome ? root.chrome.eventInk(root.occurrence.color) : "transparent"
+  }
+
   Column {
     anchors.left: parent.left
     anchors.right: chevron.left

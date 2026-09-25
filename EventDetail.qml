@@ -29,14 +29,28 @@ Column {
       font.letterSpacing: root.chrome ? root.chrome.trackedSpacing : 1
     }
 
-    Text {
+    Row {
       width: parent.width
-      text: root.occurrence ? root.occurrence.title : ""
-      color: root.chrome ? root.chrome.headline : "transparent"
-      font.family: root.chrome ? root.chrome.displayFamily : "monospace"
-      font.pixelSize: Style.font.display
-      font.weight: Font.Bold
-      wrapMode: Text.WordWrap
+      spacing: Style.space(12)
+
+      Rectangle {
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.occurrence && root.chrome
+          && root.chrome.eventHex(root.occurrence.color) !== ""
+        width: Style.space(12)
+        height: width
+        color: root.occurrence && root.chrome ? root.chrome.eventInk(root.occurrence.color) : "transparent"
+      }
+
+      Text {
+        width: parent.width - (parent.children[0].visible ? Style.space(24) : 0)
+        text: root.occurrence ? root.occurrence.title : ""
+        color: root.chrome ? root.chrome.headline : "transparent"
+        font.family: root.chrome ? root.chrome.displayFamily : "monospace"
+        font.pixelSize: Style.font.display
+        font.weight: Font.Bold
+        wrapMode: Text.WordWrap
+      }
     }
   }
 
