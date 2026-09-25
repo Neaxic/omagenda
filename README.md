@@ -21,7 +21,6 @@ one; the year page always opens a month that way.
 │   40 │ 28 ·│ 29 ··│ 30 │  1  │  2 ·│  3  │  4              │
 │   41 │  5 ·│  6 · │  7 │  8  │  9  │ 10  │ 11      ← faded │
 │  ───────────────────────────────────────────────────────── │
-│  SATURDAY, SEPTEMBER 26                                     │
 │  ───────────────────────────────────────────────────────── │
 │ ▌Design review                                           ›  │
 │   14:00 – 15:00 · Studio 2                                  │
@@ -33,8 +32,10 @@ one; the year page always opens a month that way.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-A day with nothing on it shows its heading and stops there — no empty band, no
-count line. The bands below say how many there are.
+The agenda states nothing the page has already said: no date heading (the
+masthead names the day and the grid has it outlined), no count line (the bands
+are the count). A day with nothing on it shows no agenda at all — the rule under
+the grid closes it and the pager follows.
 
 Four pages, all inside the one popup:
 
@@ -217,9 +218,10 @@ omarchy-shell datebook path
 
 ## Where this differs from the mockup
 
-- The day heading **drops the "1 event" line** and the **`+` button** — NEW EVENT
-  at the foot of the page already does that job — and an empty day drops its band
-  altogether rather than reading "Nothing planned".
+- The agenda **drops the mockup's day heading, its "1 event" line and its `+`**:
+  the date is already in the masthead and the grid, the bands are their own
+  count, and NEW EVENT at the foot does what the `+` did. An empty day drops the
+  band altogether rather than reading "Nothing planned".
 - Events can be **colour-coded**, which the mockup does not show at all.
 - The grid **rolls three weeks from the current one** rather than showing a whole
   month — which is what the mockup itself shows (weeks 39, 40, 41), and the

@@ -350,23 +350,17 @@ Panel {
 
       Item { width: 1; height: Style.space(18) }
 
-      Rectangle { width: parent.width; height: 1; color: tokens.rule }
-
-      Item { width: 1; height: Style.space(14) }
-
-      // --- the selected day ----------------------------------------------
-      // Just the date: the count line said what the bands already say, and the
-      // + duplicated NEW EVENT at the foot of the page.
-      Text {
+      // --- the selected day ------------------------------------------------
+      // No heading: the masthead already names the day and the grid has it
+      // outlined, so a third statement of the date was only taking up room.
+      // With events, the agenda's own top rule closes the grid; without them,
+      // this one does, so the grid is never left with an open bottom edge.
+      Rectangle {
         width: parent.width
-        text: Model.dayHeading(root.selectedISO)
-        color: tokens.dim
-        font.family: tokens.fontFamily
-        font.pixelSize: tokens.labelSize
-        font.letterSpacing: tokens.trackedSpacing
+        height: visible ? 1 : 0
+        visible: root.dayEvents.length === 0
+        color: tokens.rule
       }
-
-      Item { width: 1; height: root.dayEvents.length > 0 ? Style.space(13) : 0 }
 
       // --- the agenda ------------------------------------------------------
       // A day with nothing on it shows nothing at all: an empty band is just
