@@ -1,8 +1,8 @@
 # Where to pick this up
 
-Last touched **26 September 2026**. Everything in the code is done and tested; what
-is left is registration work in Google's console and one purchase, none of which can
-be done from here.
+Last touched **27 September 2026**. Google sync works against real Google, on a
+published client. What is left is Google's verification review, which removes the
+warning screen and the 100-account cap — and the release itself.
 
 ## The state of it
 
@@ -10,76 +10,58 @@ Datebook syncs Google Calendar both ways at **one button press** — CALENDARS �
 WITH GOOGLE CALENDAR. No API keys, no Cloud project for the user: the OAuth client is
 the plugin's, shipped in `google-app.json`.
 
-**`google-app.json` is empty**, so right now the CALENDARS page says this build has no
-Google client and offers no button. That is deliberate and honest, not a bug. Fill it
-in and the button appears.
+**It has talked to real Google**, on this machine, with three calendars syncing (one
+writable, two read-only). The consent screen is **published to In production**, so
+refresh tokens last instead of dying every seven days.
 
-Everything was verified against a stubbed `bin/gcal` — all four page states, connect,
-auto-adding the primary calendar, colour allocation, read-only calendars, disconnect.
-**It has still never talked to real Google.** That is the first thing below.
+Everything below is optional in the sense that the plugin works without it. None of
+it is optional if Datebook gets popular.
 
-## Next actions, in order
+## 1. Release to omarchyplugins
 
-### 1. Make it work (about an hour, do this first)
+- [ ] Merge `google-one-press` into `main`
+- [ ] Make the repo public
+- [ ] Submit to the omarchyplugins listing
 
-You need a working flow before anything else, because the demo video in step 4 is a
-recording of it.
+The README now states the warning screen and the cap up front, so nobody meets them
+as a surprise. Anyone who objects to the shipped client can point
+`~/.config/datebook/google-client.json` at their own and is then exempt from both.
 
-- [ ] Cloud console: new project `Datebook`, enable the **Google Calendar API**
-- [ ] OAuth consent screen: External, app name `Datebook`, your email twice
-- [ ] Credentials → OAuth client ID → **Desktop app**
-- [ ] `bin/set-google-client '<id>.apps.googleusercontent.com' 'GOCSPX-<secret>'`
-      (or `--from ~/Downloads/client_secret_*.json`)
-- [ ] `bin/gcal connect` — real browser, real Google, first time ever
-- [ ] Open the popup → CALENDARS, confirm your calendars list and sync
-- [ ] **Publish app → In production.** Not optional: in *Testing* Google expires
-      refresh tokens after seven days and sync breaks weekly
-- [ ] Commit `google-app.json` with the values in it
+## 2. Watch the 100-account cap
 
-At this point it works for anyone, behind Google's "hasn't verified this app" screen.
-Shippable if you are willing to document that.
+This is the real ceiling, and it is **counted over the project's lifetime and cannot
+be reset**. Account 101 simply cannot connect. Verification lifts it retroactively, so
+nothing is lost by deferring — but start well before you are near it, because the
+review runs to weeks.
 
-### 2. The domain — done
+There is no counter in the Cloud console that shows this directly; watch installs and
+issue reports.
 
-The domain is **gaard.dev**, and the site is written and lives in its own repository,
-[Neaxic/gaard.dev](https://github.com/Neaxic/gaard.dev): homepage, privacy policy and
-terms of service, static, no build step. `site/` is gone from this repo.
-
-- [x] Domain registered
-- [x] Homepage, privacy policy and terms written, contact address filled in
-- [ ] Deploy it so `gaard.dev/`, `/privacy/` and `/terms/` all load over HTTPS
-
-### 3. Two things only you can make
-
-- [ ] **A logo.** Square PNG, 120×120 or larger, for the consent screen. Not written.
-
-### 4. Submit for verification
+## 3. Verification, when it is worth it
 
 Full walkthrough with the exact field values and the text to paste:
-**[docs/google-verification.md](docs/google-verification.md)**. The short of it:
+**[docs/google-verification.md](docs/google-verification.md)**. What it needs:
 
+- [ ] **Deploy [gaard.dev](https://gaard.dev)** — homepage and `/privacy/` must both
+      load. The pages are written; `site/` moved out to its own repo
 - [ ] Verify the domain in **Search Console**, using the same Google account that owns
       the Cloud project. This is the step people forget and submissions bounce on
-- [ ] Branding: name, logo, homepage, privacy link, terms link, authorized domain
+- [ ] **A logo.** Square PNG, 120x120 or larger, for the consent screen
+- [ ] Branding: name, logo, homepage, privacy link, authorized domain
 - [ ] Data Access: exactly the two scopes, nothing more
 - [ ] **Record the demo video**, unlisted on YouTube. The part most first submissions
       fail is showing each scope *being used* — not just the sign-in. Shot list is in
-      the doc
+      the doc. Record it on a clean desktop; it goes to Google
 - [ ] Paste the scope justifications from the doc, submit
-- [ ] Wait. Google quotes 3–5 business days; calendar scopes often run to weeks. Do
+- [ ] Wait. Google quotes 3-5 business days; calendar scopes often run to weeks. Do
       not change scopes, app name or domain mid-review — it restarts
 
-> Record the video on a clean desktop. It goes to Google.
+## Not built, if you ever want them
 
-## Housekeeping, whenever
+Notifications before an event, editing a single occurrence of a repeat, repeats on a
+synced calendar, a general settings page, any provider other than Google.
 
-- [ ] `rm ~/.config/datebook/events.json` — the store still holds the eight demo
-      events added to photograph the grid; the service writes a fresh empty one
-- [ ] Not built, if you ever want them: notifications before an event, editing a
-      single occurrence of a repeat, repeats on a synced calendar, a general settings
-      page, any provider other than Google
-
-## Gotchas that cost time last session
+## Gotchas that cost time
 
 - **Nothing hot-reloads.** The shell logs "Local plugin changed, reloading" and then
   renders a blank page from stale QML. `omarchy restart shell` before believing any
@@ -88,3 +70,6 @@ Full walkthrough with the exact field values and the text to paste:
   `page month|year|detail <id>|compose|calendars`. Check it actually opened with
   `hyprctl layers | grep "namespace: omarchy-keyboard-panel,"` — a bare `toggle`
   closes it if it was already open, which silently gives you a blank capture.
+- `bin/gcal connect` blocks for five minutes waiting on the loopback callback, and
+  each run mints a fresh port and PKCE verifier. Run it when you are actually at the
+  browser; a stale URL from an earlier run is dead.
