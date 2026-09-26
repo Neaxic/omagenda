@@ -48,6 +48,12 @@ Item {
   readonly property string home: Quickshell.env("HOME")
   readonly property string configDir: home + "/.config/datebook"
   readonly property string eventsPath: configDir + "/events.json"
+  readonly property string sourcesPath: configDir + "/sources.json"
+  readonly property string cachePath: configDir + "/cache.json"
+
+  function pluginFile(name) {
+    return decodeURIComponent(Qt.resolvedUrl(name).toString().replace(/^file:\/\//, ""))
+  }
 
   // --- clock ------------------------------------------------------------------
   // One ticker drives every date-dependent binding. The minute matters for the
@@ -179,18 +185,72 @@ Item {
     selectedISO = todayISO
   }
 
+  // --- sources ------------------------------------------------------------------
+  // The local JSON store is one calendar; each synced Google calendar is another.
+  // Remote events live in their own cache so a sync can never touch local edits,
+  // and each source carries the colour its events take unless they override it.
+  //   { id, kind: "google", calendarId, name, color, enabled, writable }
+  property var sources: []
+  // sourceId -> { syncToken, events: [] }, persisted to cache.json.
+  property var remote: ({})
+
+  readonly property var localSource: ({ id: "local", kind: "local", name: "Local",
+                                        color: "none", enabled: true, writable: true })
+
+  function sourceById(id) {
+    if (id === "local" || id === "") return localSource
+    for (var i = 0; i < sources.length; i++) if (sources[i].id === id) return sources[i]
+    return null
+  }
+
+  function sourceColor(id) {
+    var source = sourceById(id)
+    return source ? String(source.color || "none") : "none"
+  }
+
+  function sourceWritable(id) {
+    var source = sourceById(id)
+    return source ? source.writable !== false : false
+  }
+
+  // Every calendar's events in one list, which is what the whole view layer reads.
+  readonly property var allEvents: {
+    var lists = []
+    for (var i = 0; i < sources.length; i++) {
+      var source = sources[i]
+      if (source.enabled === false) continue
+      var entry = remote[source.id]
+      if (!entry || !entry.events || !entry.events.length) continue
+      // A synced event takes its calendar's colour unless it carries one of its
+      // own — colour says which calendar, which is what it says everywhere else.
+      var tint = String(source.color || "none")
+      if (tint === "none") { lists.push(entry.events); continue }
+      var painted = []
+      for (var j = 0; j < entry.events.length; j++) {
+        var event = entry.events[j]
+        if (event.color !== "none") { painted.push(event); continue }
+        var copy = {}
+        for (var key in event) copy[key] = event[key]
+        copy.color = tint
+        painted.push(copy)
+      }
+      lists.push(painted)
+    }
+    return Model.mergeSources(events, lists)
+  }
+
   // --- events -----------------------------------------------------------------
   property var events: []
   property bool loaded: false
   property string lastError: ""
 
-  readonly property var windowMarks: Model.marksInRange(events, anchorISO, weeksShown * 7)
-  readonly property var monthMarks: Model.marksForMonth(events, viewYear, viewMonth)
-  readonly property var yearMarks: Model.marksInRange(events, viewYear + "-01-01", 366)
-  readonly property var selectedEvents: Model.eventsOn(events, selectedISO)
-  readonly property var todayEvents: Model.eventsOn(events, todayISO)
-  readonly property var upcomingEvents: Model.upcoming(events, todayISO, upcomingDays)
-  readonly property var next: Model.nextOccurrence(events, todayISO, nowMinutes)
+  readonly property var windowMarks: Model.marksInRange(allEvents, anchorISO, weeksShown * 7)
+  readonly property var monthMarks: Model.marksForMonth(allEvents, viewYear, viewMonth)
+  readonly property var yearMarks: Model.marksInRange(allEvents, viewYear + "-01-01", 366)
+  readonly property var selectedEvents: Model.eventsOn(allEvents, selectedISO)
+  readonly property var todayEvents: Model.eventsOn(allEvents, todayISO)
+  readonly property var upcomingEvents: Model.upcoming(allEvents, todayISO, upcomingDays)
+  readonly property var next: Model.nextOccurrence(allEvents, todayISO, nowMinutes)
 
   readonly property var weeks: gridMode === "month"
     ? Model.monthWeeks(viewYear, viewMonth, {
@@ -198,13 +258,13 @@ Item {
         showAdjacentMonths: true,
         todayISO: todayISO,
         marks: monthMarks,
-        events: events
+        events: allEvents
       })
     : Model.weeksFrom(anchorISO, weeksShown, {
         mondayFirst: weekStartsMonday,
         todayISO: todayISO,
         marks: windowMarks,
-        events: events
+        events: allEvents
       })
 
   // "SEPTEMBER 2026" for a month, or "SEP – OCT 2026" once a window straddles two.
@@ -288,18 +348,25 @@ Item {
   // lands there, otherwise on its own date. The detail page needs the day it is
   // standing on, not just the series head.
   function occurrenceById(id, preferISO) {
-    for (var i = 0; i < events.length; i++) {
-      if (events[i].id !== id) continue
-      var onPreferred = Model.isISODate(preferISO) ? Model.eventsOn([events[i]], preferISO) : []
+    var pool = allEvents
+    for (var i = 0; i < pool.length; i++) {
+      if (pool[i].id !== id) continue
+      var onPreferred = Model.isISODate(preferISO) ? Model.eventsOn([pool[i]], preferISO) : []
       if (onPreferred.length > 0) return onPreferred[0]
-      var own = Model.eventsOn([events[i]], events[i].date)
+      var own = Model.eventsOn([pool[i]], pool[i].date)
       return own.length > 0 ? own[0] : null
     }
     return null
   }
 
   // Create or update from the compose form. Returns "" or a short message.
+  // `values.source` chooses the calendar; an event that changes calendar is
+  // removed from the old one and created on the new, since neither Google nor
+  // the local file can move it in place.
   function saveEvent(id, values) {
+    var existing = id !== "" ? findEvent(id) : null
+    var target = String(values.source || (existing ? existing.source : "local") || "local")
+
     var raw = {
       title: values.title,
       date: values.date,
@@ -308,7 +375,8 @@ Item {
       durationMin: values.durationMin,
       location: values.location,
       color: values.color,
-      repeat: values.repeat
+      repeat: values.repeat,
+      source: target
     }
     if (String(values.title || "").replace(/^\s+|\s+$/g, "") === "") return "Give it a title"
     if (!Model.fromISO(String(values.date || ""))) return "Use a date like " + todayISO
@@ -316,32 +384,379 @@ Item {
       return "Use a time like 14:00, or leave it blank"
     var span = Math.round(Number(values.days) || 1)
     if (span < 1 || span > 366) return "A run is between 1 and 366 days"
+    if (target !== "local" && String(values.repeat || "none") !== "none")
+      return "Repeats are local-only for now — save it to Local"
 
-    if (id !== "") {
+    if (existing) {
       // Keep what the form does not ask about (notes, an until bound).
-      for (var i = 0; i < events.length; i++) {
-        if (events[i].id !== id) continue
-        raw.notes = events[i].notes
-        raw.until = events[i].until
-        break
-      }
+      raw.notes = existing.notes
+      raw.until = existing.until
+      if (existing.source === target) raw.remoteId = existing.remoteId
     }
 
     var event = Model.normalizeEvent(raw)
     if (!event) return "Could not read that event"
-    event.id = id !== "" ? id : Model.newId(event.date)
-    save(Model.upsertEvent(events, event))
+
+    // Leaving a calendar behind: take it off the old one first.
+    if (existing && existing.source !== target) {
+      if (existing.source === "local") save(Model.removeEvent(events, existing.id))
+      else remoteRemove(existing)
+    }
+
+    if (target === "local") {
+      event.id = (existing && existing.source === "local") ? id : Model.newId(event.date)
+      save(Model.upsertEvent(events, event))
+    } else {
+      var error = remoteSave(target, event)
+      if (error !== "") return error
+    }
     select(event.date)
     return ""
   }
 
+  function findEvent(id) {
+    var pool = allEvents
+    for (var i = 0; i < pool.length; i++) if (pool[i].id === id) return pool[i]
+    return null
+  }
+
   function remove(id) {
+    var event = findEvent(id)
+    if (event && event.source !== "local") return remoteRemove(event) === ""
     var before = events.length
     save(Model.removeEvent(events, id))
     return events.length < before
   }
 
   function openEventsFile() { Quickshell.execDetached(["xdg-open", eventsPath]) }
+
+  // --- syncing ------------------------------------------------------------------
+  readonly property string gcalBin: pluginFile("bin/gcal")
+
+  property bool syncing: false
+  property string syncError: ""
+  property double lastSynced: 0
+  property var syncQueue: []
+  property var googleState: ({ client: false, authorized: false })
+  property var calendarList: []
+
+  // Google is asked for a window rather than everything: a decade of history is
+  // not worth the round trip. An incremental pass ignores these and follows the
+  // sync token instead.
+  readonly property string syncFromISO: Model.shiftISO(todayISO, -120)
+  readonly property string syncToISO: Model.shiftISO(todayISO, 400)
+
+  function googleSources() {
+    var out = []
+    for (var i = 0; i < sources.length; i++) {
+      var source = sources[i]
+      if (source.kind === "google" && source.enabled !== false) out.push(source)
+    }
+    return out
+  }
+
+  function syncAll(force) {
+    if (syncing) return "busy"
+    var pending = googleSources()
+    if (pending.length === 0) return "no sources"
+    var queue = []
+    for (var i = 0; i < pending.length; i++)
+      queue.push({ id: pending[i].id, calendarId: pending[i].calendarId, full: force === true })
+    syncQueue = queue
+    syncing = true
+    syncError = ""
+    runSync()
+    return "ok"
+  }
+
+  function runSync() {
+    if (syncQueue.length === 0) {
+      syncing = false
+      lastSynced = Date.now()
+      saveCache()
+      return
+    }
+    var job = syncQueue[0]
+    var entry = remote[job.id]
+    var token = job.full ? "" : (entry ? String(entry.syncToken || "") : "")
+    var args = [gcalBin, "events", job.calendarId]
+    if (token !== "") args = args.concat(["--sync-token", token])
+    else args = args.concat(["--from", syncFromISO + "T00:00:00Z", "--to", syncToISO + "T00:00:00Z"])
+    syncProc.command = args
+    syncProc.running = false
+    syncProc.running = true
+  }
+
+  function finishSync(text) {
+    var job = syncQueue.length > 0 ? syncQueue[0] : null
+    if (!job) { syncing = false; return }
+    var page = Model.parseGoogleEvents(text, job.id)
+
+    if (!page.ok) {
+      syncError = page.error
+      syncQueue = syncQueue.slice(1)
+      runSync()
+      return
+    }
+
+    // The token was too old to resume from: take the same calendar again from
+    // scratch rather than leaving a half-updated cache behind.
+    if (page.expired && !job.full) {
+      var retry = [{ id: job.id, calendarId: job.calendarId, full: true }]
+      syncQueue = retry.concat(syncQueue.slice(1))
+      runSync()
+      return
+    }
+
+    var entry = remote[job.id] || { syncToken: "", events: [] }
+    var kept = job.full ? [] : (entry.events || [])
+    var index = {}
+    var merged = []
+    var i
+
+    for (i = 0; i < kept.length; i++) index[kept[i].id] = kept[i]
+    for (i = 0; i < page.deleted.length; i++) delete index[page.deleted[i]]
+    for (i = 0; i < page.events.length; i++) index[page.events[i].id] = page.events[i]
+    for (var key in index) merged.push(index[key])
+
+    // A fresh object every time: QML does not notice a mutated one.
+    var next = {}
+    for (var id in remote) next[id] = remote[id]
+    next[job.id] = { syncToken: page.syncToken || entry.syncToken || "", events: Model.sortEvents(merged) }
+    remote = next
+
+    syncQueue = syncQueue.slice(1)
+    runSync()
+  }
+
+  // --- writing back ---------------------------------------------------------------
+  // A remote event is edited where it lives. The local cache is updated straight
+  // away so the panel does not sit still waiting for a round trip, and the
+  // source is re-synced afterwards to pick up whatever Google actually stored.
+  property var writeQueue: []
+  property bool writing: false
+
+  function queueWrite(job) {
+    writeQueue = writeQueue.concat([job])
+    if (!writing) runWrite()
+  }
+
+  function runWrite() {
+    if (writeQueue.length === 0) { writing = false; return }
+    writing = true
+    var job = writeQueue[0]
+    writeProc.command = job.command
+    writeProc.running = false
+    writeProc.running = true
+  }
+
+  function finishWrite(text) {
+    var job = writeQueue.length > 0 ? writeQueue[0] : null
+    writeQueue = writeQueue.slice(1)
+    if (job) {
+      var reply = {}
+      try { reply = JSON.parse(String(text || "{}")) } catch (e) { reply = {} }
+      if (reply.error) syncError = String(reply.error)
+      else if (job.sourceId) {
+        // Pull the source so the cache matches what Google now holds.
+        syncQueue = syncQueue.concat([{ id: job.sourceId, calendarId: job.calendarId, full: false }])
+        if (!syncing) { syncing = true; runSync() }
+      }
+    }
+    runWrite()
+  }
+
+  function remoteSave(sourceId, event) {
+    var source = sourceById(sourceId)
+    if (!source || source.kind !== "google") return "unknown calendar"
+    if (source.writable === false) return "that calendar is read-only"
+    var body = JSON.stringify(Model.toGoogleEvent(event))
+    var command = event.remoteId !== ""
+      ? [gcalBin, "patch", source.calendarId, event.remoteId, body]
+      : [gcalBin, "insert", source.calendarId, body]
+    queueWrite({ command: command, sourceId: source.id, calendarId: source.calendarId })
+    return ""
+  }
+
+  function remoteRemove(event) {
+    var source = sourceById(event.source)
+    if (!source || source.kind !== "google") return "unknown calendar"
+    if (source.writable === false) return "that calendar is read-only"
+    queueWrite({
+      command: [gcalBin, "delete", source.calendarId, event.remoteId],
+      sourceId: source.id, calendarId: source.calendarId
+    })
+    // Drop it locally at once; the follow-up sync confirms.
+    var entry = remote[source.id]
+    if (entry) {
+      var left = []
+      for (var i = 0; i < entry.events.length; i++)
+        if (entry.events[i].id !== event.id) left.push(entry.events[i])
+      var next = {}
+      for (var id in remote) next[id] = remote[id]
+      next[source.id] = { syncToken: entry.syncToken, events: left }
+      remote = next
+    }
+    return ""
+  }
+
+  // --- source bookkeeping -----------------------------------------------------------
+  function saveSources(list) {
+    sources = list
+    sourcesFile.setText(JSON.stringify({ version: 1, sources: list }, null, 2) + "\n")
+  }
+
+  function addSource(calendarId, name, color) {
+    var id = "google:" + String(calendarId)
+    for (var i = 0; i < sources.length; i++) if (sources[i].id === id) return "already added"
+    var next = sources.slice(0)
+    next.push({
+      id: id, kind: "google", calendarId: String(calendarId),
+      name: String(name || calendarId), color: Model.normalizeColor(color),
+      enabled: true, writable: true
+    })
+    saveSources(next)
+    syncAll(true)
+    return id
+  }
+
+  function removeSource(id) {
+    var next = []
+    for (var i = 0; i < sources.length; i++) if (sources[i].id !== id) next.push(sources[i])
+    if (next.length === sources.length) return false
+    saveSources(next)
+    var cache = {}
+    for (var key in remote) if (key !== id) cache[key] = remote[key]
+    remote = cache
+    saveCache()
+    return true
+  }
+
+  function setSourceEnabled(id, enabled) {
+    var next = []
+    for (var i = 0; i < sources.length; i++) {
+      var source = sources[i]
+      if (source.id === id) {
+        var copy = {}
+        for (var key in source) copy[key] = source[key]
+        copy.enabled = enabled === true
+        next.push(copy)
+      } else next.push(source)
+    }
+    saveSources(next)
+    return true
+  }
+
+  function saveCache() {
+    var out = {}
+    for (var id in remote) {
+      var entry = remote[id]
+      out[id] = { syncToken: entry.syncToken || "", events: entry.events || [] }
+    }
+    cacheFile.setText(JSON.stringify({ version: 1, sources: out }) + "\n")
+  }
+
+  function loadSources(raw) {
+    var data
+    try { data = JSON.parse(String(raw || "")) } catch (e) { data = null }
+    var list = data && data.sources && data.sources.length !== undefined ? data.sources : []
+    var out = []
+    for (var i = 0; i < list.length; i++) {
+      var source = list[i]
+      if (!source || !source.id || !source.calendarId) continue
+      out.push({
+        id: String(source.id), kind: String(source.kind || "google"),
+        calendarId: String(source.calendarId), name: String(source.name || source.calendarId),
+        color: Model.normalizeColor(source.color), enabled: source.enabled !== false,
+        writable: source.writable !== false
+      })
+    }
+    sources = out
+  }
+
+  function loadCache(raw) {
+    var data
+    try { data = JSON.parse(String(raw || "")) } catch (e) { data = null }
+    var stored = data && data.sources ? data.sources : {}
+    var out = {}
+    for (var id in stored) {
+      var entry = stored[id] || {}
+      var list = entry.events && entry.events.length !== undefined ? entry.events : []
+      var events = []
+      for (var i = 0; i < list.length; i++) {
+        var parsed = Model.normalizeEvent(list[i])
+        if (parsed) { parsed.id = String(list[i].id || parsed.id); events.push(parsed) }
+      }
+      out[id] = { syncToken: String(entry.syncToken || ""), events: Model.sortEvents(events) }
+    }
+    remote = out
+  }
+
+  Process {
+    id: syncProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.finishSync(text)
+    }
+    onExited: function(code) {
+      if (code !== 0 && root.syncError === "") root.syncError = "sync helper exited " + code
+    }
+  }
+
+  Process {
+    id: writeProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.finishWrite(text)
+    }
+  }
+
+  Process {
+    id: googleProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var reply = {}
+        try { reply = JSON.parse(String(text || "{}")) } catch (e) { reply = {} }
+        if (reply.calendars) root.calendarList = reply.calendars
+        else root.googleState = reply
+      }
+    }
+  }
+
+  function askGoogle(what) {
+    googleProc.command = [gcalBin, what]
+    googleProc.running = false
+    googleProc.running = true
+  }
+
+  Timer {
+    id: syncTimer
+    interval: 600000                      // ten minutes
+    repeat: true
+    running: root.googleSources().length > 0
+    triggeredOnStart: true
+    onTriggered: root.syncAll(false)
+  }
+
+  FileView {
+    id: sourcesFile
+    path: root.sourcesPath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadSources(text())
+    onFileChanged: reload()
+  }
+
+  FileView {
+    id: cacheFile
+    path: root.cachePath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadCache(text())
+  }
 
   // Event colours are theme palette slots, so they change with the theme rather
   // than sitting on top of it.
@@ -392,6 +807,9 @@ Item {
         today: root.todayISO,
         selected: root.selectedISO,
         grid: root.gridMode,
+        sources: root.sources.length,
+        synced: root.lastSynced,
+        syncError: root.syncError,
         window: root.anchorISO + ".." + root.windowEndISO,
         view: root.viewYear + "-" + Model.pad2(root.viewMonth + 1),
         loaded: root.loaded,
@@ -406,12 +824,12 @@ Item {
     // A day ("2026-09-26"), or nothing for the selected day.
     function list(day: string): string {
       var iso = Model.isISODate(day) ? day : root.selectedISO
-      return JSON.stringify(Model.eventsOn(root.events, iso))
+      return JSON.stringify(Model.eventsOn(root.allEvents, iso))
     }
 
     function upcoming(days: string): string {
       var n = parseInt(days, 10)
-      return JSON.stringify(Model.upcoming(root.events, root.todayISO, isFinite(n) ? n : root.upcomingDays))
+      return JSON.stringify(Model.upcoming(root.allEvents, root.todayISO, isFinite(n) ? n : root.upcomingDays))
     }
 
     // One line, same grammar as the add field: "2026-10-02 09:00 Standup !weekly".
@@ -485,6 +903,54 @@ Item {
       try { values = JSON.parse(json) } catch (e) { return "expected JSON" }
       var error = root.saveEvent(id, values)
       return error === "" ? "ok" : error
+    }
+
+    // --- calendars ------------------------------------------------------------
+    function sources(): string {
+      var out = [root.localSource]
+      for (var i = 0; i < root.sources.length; i++) out.push(root.sources[i])
+      return JSON.stringify(out)
+    }
+
+    function sourceAdd(calendarId: string, name: string, color: string): string {
+      if (calendarId === "") return "expected a calendar id"
+      return root.addSource(calendarId, name, color)
+    }
+
+    function sourceRemove(id: string): string {
+      return root.removeSource(id) ? "ok" : "unknown source"
+    }
+
+    function sourceEnable(id: string, enabled: string): string {
+      return root.setSourceEnabled(id, enabled === "true") ? "ok" : "unknown source"
+    }
+
+    // --- google ---------------------------------------------------------------
+    // The helper is asked in the background; `googleResult` reads what came back,
+    // the same shape `bin/gcal` prints.
+    function google(what: string): string {
+      if (["status", "calendars"].indexOf(what) === -1) return "expected status|calendars"
+      root.askGoogle(what)
+      return "ok"
+    }
+
+    function googleResult(): string {
+      return JSON.stringify({ state: root.googleState, calendars: root.calendarList })
+    }
+
+    function sync(force: string): string {
+      return root.syncAll(force === "true" || force === "full")
+    }
+
+    function syncStatus(): string {
+      return JSON.stringify({
+        syncing: root.syncing,
+        queued: root.syncQueue.length,
+        writing: root.writing,
+        lastSynced: root.lastSynced,
+        error: root.syncError,
+        sources: root.googleSources().length
+      })
     }
 
     function reload(): string { eventsFile.reload(); return "ok" }

@@ -463,6 +463,124 @@ test("parseAddInput leaves an unknown bang word in the title", () => {
   assert.equal(e.repeat, "none")
 })
 
+// --- google -----------------------------------------------------------------
+
+function gcalAllDay(over) {
+  return Object.assign({ id: "g1", status: "confirmed", summary: "Berlin trip",
+                         start: { date: "2026-09-30" }, end: { date: "2026-10-05" },
+                         etag: '"e1"' }, over || {})
+}
+
+test("an all-day Google event keeps its span, end being exclusive", () => {
+  const e = M.parseGoogleEvent(gcalAllDay(), "work")
+  assert.equal(e.date, "2026-09-30")
+  assert.equal(e.days, 5)                 // 30 Sep .. 4 Oct, not 5 Oct
+  assert.equal(e.time, "")
+  assert.equal(e.id, "work/g1")
+  assert.equal(e.source, "work")
+  assert.equal(e.remoteId, "g1")
+  // A single all-day event is one day, not zero.
+  const one = M.parseGoogleEvent(gcalAllDay({ start: { date: "2026-09-30" }, end: { date: "2026-10-01" } }), "work")
+  assert.equal(one.days, 1)
+})
+
+test("a timed Google event lands in local time with its duration", () => {
+  const e = M.parseGoogleEvent({
+    id: "g2", summary: "Design review", location: "Studio 2",
+    start: { dateTime: "2026-09-26T14:00:00+02:00" },
+    end: { dateTime: "2026-09-26T15:30:00+02:00" }
+  }, "work")
+  assert.equal(e.title, "Design review")
+  assert.equal(e.location, "Studio 2")
+  assert.equal(e.durationMin, 90)
+  assert.equal(e.days, 1)
+})
+
+test("a sitting that ends at midnight belongs to the day it started", () => {
+  const e = M.parseGoogleEvent({
+    id: "g3", summary: "Late shift",
+    start: { dateTime: "2026-09-26T20:00:00+02:00" },
+    end: { dateTime: "2026-09-27T00:00:00+02:00" }
+  }, "work")
+  assert.equal(e.days, 1)
+  const over = M.parseGoogleEvent({
+    id: "g4", summary: "Night shift",
+    start: { dateTime: "2026-09-26T20:00:00+02:00" },
+    end: { dateTime: "2026-09-27T02:00:00+02:00" }
+  }, "work")
+  assert.equal(over.days, 2)
+})
+
+test("unusable Google events are dropped rather than guessed at", () => {
+  assert.equal(M.parseGoogleEvent({ id: "x", status: "cancelled" }, "work"), null)
+  assert.equal(M.parseGoogleEvent({ id: "x", summary: "No when" }, "work"), null)
+  assert.equal(M.parseGoogleEvent(null, "work"), null)
+  // A missing summary is a real event with no title, not a broken one.
+  assert.equal(M.parseGoogleEvent({ id: "x", start: { date: "2026-09-26" },
+                                    end: { date: "2026-09-27" } }, "work").title, "(no title)")
+})
+
+test("a page of changes separates the live from the deleted", () => {
+  const page = M.parseGoogleEvents({
+    items: [gcalAllDay(), { id: "gone", status: "cancelled" }],
+    syncToken: "tok123"
+  }, "work")
+  assert.equal(page.ok, true)
+  assert.equal(page.events.length, 1)
+  assert.deepEqual(page.deleted, ["work/gone"])
+  assert.equal(page.syncToken, "tok123")
+})
+
+test("an expired sync token asks for a full pass instead of failing", () => {
+  const page = M.parseGoogleEvents({ expired: true }, "work")
+  assert.equal(page.ok, true)
+  assert.equal(page.expired, true)
+  assert.deepEqual(page.events, [])
+})
+
+test("a broken response is reported, not thrown", () => {
+  assert.equal(M.parseGoogleEvents("not json", "work").ok, false)
+  assert.equal(M.parseGoogleEvents({ error: "Google API 403" }, "work").ok, false)
+})
+
+test("events round-trip back to Google's shape", () => {
+  const trip = M.parseGoogleEvent(gcalAllDay(), "work")
+  assert.deepEqual(M.toGoogleEvent(trip).start, { date: "2026-09-30" })
+  assert.deepEqual(M.toGoogleEvent(trip).end, { date: "2026-10-05" })   // exclusive again
+  const timed = M.normalizeEvent({ title: "Standup", date: "2026-09-28", time: "09:30", durationMin: 15 })
+  const out = M.toGoogleEvent(timed)
+  assert.ok(/^2026-09-28T09:30:00[+-]\d{2}:\d{2}$/.test(out.start.dateTime), out.start.dateTime)
+  assert.ok(/^2026-09-28T09:45:00[+-]\d{2}:\d{2}$/.test(out.end.dateTime), out.end.dateTime)
+  // A timed event with no length still needs an end for Google.
+  const open = M.toGoogleEvent(M.normalizeEvent({ title: "T", date: "2026-09-28", time: "09:00" }))
+  assert.ok(/T10:00:00/.test(open.end.dateTime))
+})
+
+test("a synced event survives every read path", () => {
+  // Regression: eventsOn built a field only for non-local events, so a typo in
+  // that branch was invisible to every test using the local store.
+  const remote = M.parseGoogleEvent(gcalAllDay({ start: { date: "2026-09-26" },
+                                                 end: { date: "2026-09-28" } }), "google:work")
+  const on = M.eventsOn([remote], "2026-09-27")
+  assert.equal(on.length, 1)
+  assert.equal(on[0].source, "google:work")
+  assert.equal(on[0].dayIndex, 1)
+  assert.equal(M.marksInRange([remote], "2026-09-26", 3)["2026-09-26"].count, 1)
+  assert.equal(M.weekSegments([remote], "2026-09-21").length, 1)
+  assert.equal(M.upcoming([remote], "2026-09-26", 3).length, 2)
+  assert.ok(M.nextOccurrence([remote], "2026-09-26", -1))
+})
+
+test("mergeSources keeps every calendar in one sorted list", () => {
+  const local = [M.normalizeEvent({ id: "l1", title: "Local", date: "2026-09-27" })]
+  const work = [M.parseGoogleEvent(gcalAllDay({ start: { date: "2026-09-26" },
+                                                end: { date: "2026-09-27" } }), "work")]
+  const merged = M.mergeSources(local, [work])
+  assert.deepEqual(merged.map(e => e.source), ["work", "local"])
+  assert.equal(M.mergeSources(local, []).length, 1)
+  assert.equal(M.mergeSources([], [work, []]).length, 1)
+})
+
 // --- labels -----------------------------------------------------------------
 
 test("formatTime honours the 12-hour setting", () => {

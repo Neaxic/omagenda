@@ -10,6 +10,8 @@ Column {
   property var chrome: null
   property var occurrence: null
   property bool use24Hour: true
+  property string sourceName: ""
+  property bool writable: true
 
   signal editRequested(string id)
   signal deleteRequested(string id)
@@ -89,6 +91,9 @@ Column {
         }
         if (root.occurrence.notes !== "")
           rows.push({ label: "NOTES", value: root.occurrence.notes })
+        if (root.sourceName !== "")
+          rows.push({ label: "CALENDAR", value: root.sourceName
+                      + (root.writable ? "" : "  ·  read-only") })
         return rows
       }
 
@@ -124,6 +129,7 @@ Column {
 
     OutlineButton {
       chrome: root.chrome
+      visible: root.writable
       glyph: "\u{F0CB6}"                       // pencil-outline
       label: "EDIT"
       onClicked: if (root.occurrence) root.editRequested(root.occurrence.id)
@@ -131,6 +137,7 @@ Column {
 
     OutlineButton {
       chrome: root.chrome
+      visible: root.writable
       glyph: "\u{F0A7A}"                       // trash-can-outline
       label: root.occurrence && root.occurrence.repeat !== "none" ? "DELETE SERIES" : "DELETE"
       danger: true

@@ -74,6 +74,25 @@ Panel {
   readonly property var weeks: book ? book.weeks : []
   readonly property string gridLabel: book ? book.gridLabel : ""
   readonly property string gridMode: book ? book.gridMode : "weeks"
+
+  // The local store plus every synced calendar, as the compose form's switch
+  // wants them.
+  readonly property var sourceOptions: {
+    var out = [{ key: "local", label: "LOCAL" }]
+    if (!book) return out
+    for (var i = 0; i < book.sources.length; i++) {
+      var source = book.sources[i]
+      if (source.enabled === false) continue
+      out.push({ key: source.id, label: String(source.name).toUpperCase() })
+    }
+    return out
+  }
+
+  function sourceNameOf(id) {
+    if (!book) return ""
+    var source = book.sourceById(id)
+    return source ? String(source.name) : ""
+  }
   readonly property var yearMonths: book ? book.yearMonths : []
   readonly property var dayEvents: book ? book.selectedEvents : []
   readonly property int todayCount: book ? book.todayEvents.length : 0
@@ -565,6 +584,9 @@ Panel {
       chrome: tokens
       occurrence: root.openEvent
       use24Hour: root.use24Hour
+      sourceName: root.openEvent ? root.sourceNameOf(root.openEvent.source) : ""
+      writable: root.openEvent && root.book
+        ? root.book.sourceWritable(root.openEvent.source) : true
       onEditRequested: function(id) { root.startCompose(id) }
       onDeleteRequested: function(id) { root.deleteEvent(id) }
       onClosed: root.backFromPage()
@@ -580,6 +602,7 @@ Panel {
       dateISO: root.selectedISO
       editingId: root.openEventId
       error: root.composeError
+      sources: root.sourceOptions
       onSaved: function(values) { root.saveCompose(values) }
       onCancelled: root.backFromPage()
       onAnyFieldFocusedChanged: root.textFocus = anyFieldFocused

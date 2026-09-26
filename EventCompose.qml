@@ -19,11 +19,17 @@ Column {
 
   property string repeatValue: "none"
   property string colorValue: "none"
+  property string sourceValue: "local"
+  // [{ key, label }] — the local store plus every synced calendar.
+  property var sources: []
 
   spacing: Style.space(20)
 
   function load(occurrence) {
     if (!occurrence) {
+      // Assigning breaks the binding to dateISO, which is the point: from here
+      // on the field is the form's own state, not a view of the selection.
+      dateField.text = root.dateISO
       titleField.text = ""
       daysField.text = ""
       timeField.text = ""
@@ -31,8 +37,11 @@ Column {
       placeField.text = ""
       repeatValue = "none"
       colorValue = "none"
+      sourceValue = "local"
       return
     }
+    // The event's own date, not the day the grid happens to be sitting on.
+    dateField.text = occurrence.startISO || occurrence.date
     titleField.text = occurrence.title
     daysField.text = occurrence.days > 1 ? String(occurrence.days) : ""
     timeField.text = occurrence.time
@@ -40,6 +49,7 @@ Column {
     placeField.text = occurrence.location
     repeatValue = occurrence.repeat
     colorValue = occurrence.color
+    sourceValue = occurrence.source || "local"
   }
 
   function focusTitle() { titleField.field.forceActiveFocus() }
@@ -53,6 +63,7 @@ Column {
       durationMin: parseInt(lengthField.text, 10) || 0,
       location: placeField.text,
       color: root.colorValue,
+      source: root.sourceValue,
       repeat: root.repeatValue
     })
   }
@@ -92,7 +103,6 @@ Column {
       chrome: root.chrome
       label: "DATE"
       placeholder: "YYYY-MM-DD"
-      text: root.dateISO
       onSubmitted: root.submit()
       onEscaped: root.cancelled()
     }
@@ -136,6 +146,27 @@ Column {
     placeholder: "Studio 2"
     onSubmitted: root.submit()
     onEscaped: root.cancelled()
+  }
+
+  Column {
+    width: parent.width
+    spacing: Style.space(8)
+    visible: root.sources.length > 1
+
+    Text {
+      text: "CALENDAR"
+      color: root.chrome ? root.chrome.dim : "transparent"
+      font.family: root.chrome ? root.chrome.fontFamily : "monospace"
+      font.pixelSize: root.chrome ? root.chrome.labelSize : 10
+      font.letterSpacing: root.chrome ? root.chrome.trackedSpacing : 1
+    }
+
+    SegmentedToggle {
+      chrome: root.chrome
+      current: root.sourceValue
+      options: root.sources
+      onPicked: function(key) { root.sourceValue = key }
+    }
   }
 
   Column {

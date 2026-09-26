@@ -598,6 +598,11 @@ function normalizeEvent(raw) {
     notes: trim(raw.notes),
     location: trim(raw.location),
     color: normalizeColor(raw.color),
+    // Which calendar this came from. "local" is the JSON store; anything else
+    // is a synced source, and those are only edited through their own API.
+    source: trim(raw.source) || "local",
+    remoteId: trim(raw.remoteId),
+    etag: trim(raw.etag),
     repeat: normalizeRepeat(raw.repeat),
     // "" = forever. Only meaningful with a repeat.
     until: isISODate(raw.until) && fromISO(raw.until) ? trim(raw.until) : ""
@@ -624,7 +629,8 @@ function ensureIds(events, randomFn) {
     out.push({
       id: id, title: e.title, date: e.date, days: e.days, time: e.time,
       durationMin: e.durationMin, notes: e.notes, location: e.location,
-      color: e.color, repeat: e.repeat, until: e.until
+      color: e.color, source: e.source, remoteId: e.remoteId, etag: e.etag,
+      repeat: e.repeat, until: e.until
     })
   }
   return out
@@ -687,6 +693,145 @@ function removeEvent(events, id) {
   return next
 }
 
+// ---------------------------------------------------------------- google
+
+// A Google event as Datebook sees it. Calls come back with singleEvents=true,
+// so a recurring event arrives already expanded into instances and each one is
+// an ordinary single event here — no rule we would have to re-implement.
+//
+// The one trap is that Google's end is **exclusive** for all-day events:
+// 26th to 28th means the 26th and 27th, a two-day run.
+function parseGoogleEvent(raw, sourceId) {
+  if (!raw || typeof raw !== "object") return null
+  if (raw.status === "cancelled") return null
+  var start = raw.start || {}
+  var end = raw.end || {}
+
+  var date, time, days, durationMin
+
+  if (start.date) {
+    date = trim(start.date)
+    if (!fromISO(date)) return null
+    time = ""
+    durationMin = 0
+    var span = end.date ? daysBetween(date, trim(end.date)) : 1
+    days = Math.max(1, span)
+  } else if (start.dateTime) {
+    var from = new Date(start.dateTime)
+    if (isNaN(from.getTime())) return null
+    date = toISO(from)
+    time = pad2(from.getHours()) + ":" + pad2(from.getMinutes())
+    var to = end.dateTime ? new Date(end.dateTime) : null
+    if (to && !isNaN(to.getTime())) {
+      durationMin = Math.max(0, Math.round((to.getTime() - from.getTime()) / 60000))
+      // A sitting that runs past midnight covers the days it touches, but an
+      // end at exactly midnight belongs to the day before it.
+      var endISO = toISO(to)
+      var touched = daysBetween(date, endISO) + 1
+      if (to.getHours() === 0 && to.getMinutes() === 0) touched -= 1
+      days = Math.max(1, touched)
+    } else {
+      durationMin = 0
+      days = 1
+    }
+  } else {
+    return null
+  }
+
+  return normalizeEvent({
+    id: trim(sourceId) + "/" + trim(raw.id),
+    title: trim(raw.summary) || "(no title)",
+    date: date,
+    days: days,
+    time: time,
+    durationMin: durationMin,
+    location: trim(raw.location),
+    notes: trim(raw.description),
+    source: trim(sourceId),
+    remoteId: trim(raw.id),
+    etag: trim(raw.etag)
+  })
+}
+
+// A page of `gcal events` output folded into the cache: what to keep and what
+// the remote says is gone.
+function parseGoogleEvents(payload, sourceId) {
+  var data = payload
+  if (typeof payload === "string") {
+    try { data = JSON.parse(payload) } catch (e) { data = null }
+  }
+  if (!data || data.error) return { ok: false, error: data ? String(data.error) : "bad response" }
+  if (data.expired) return { ok: true, expired: true, events: [], deleted: [], syncToken: "" }
+
+  var items = data.items && data.items.length !== undefined ? data.items : []
+  var events = []
+  var deleted = []
+  for (var i = 0; i < items.length; i++) {
+    var raw = items[i]
+    if (!raw || !raw.id) continue
+    if (raw.status === "cancelled") { deleted.push(trim(sourceId) + "/" + trim(raw.id)); continue }
+    var parsed = parseGoogleEvent(raw, sourceId)
+    if (parsed) events.push(parsed)
+  }
+  return {
+    ok: true,
+    expired: false,
+    events: events,
+    deleted: deleted,
+    syncToken: trim(data.syncToken)
+  }
+}
+
+// The same event on the way out. Timed events carry their offset so Google
+// stores the instant we meant rather than re-reading it in another zone.
+function toGoogleEvent(event) {
+  var out = {
+    summary: event.title,
+    location: event.location || "",
+    description: event.notes || ""
+  }
+  var span = Math.max(1, Math.round(event.days || 1))
+  if (!event.time) {
+    out.start = { date: event.date }
+    // Exclusive, so a one-day event ends on the next day.
+    out.end = { date: shiftISO(event.date, span) }
+  } else {
+    var minutes = Math.round(event.durationMin || 0) || 60
+    out.start = { dateTime: localISO(event.date, event.time) }
+    out.end = { dateTime: localISO(event.date, event.time, minutes) }
+  }
+  return out
+}
+
+// "2026-09-26T14:00:00+02:00" for a local wall-clock time, optionally shifted
+// by a number of minutes.
+function localISO(dateISO, time, addMinutes) {
+  var date = fromISO(dateISO)
+  if (!date) return ""
+  var minutes = minutesOfDay(time)
+  if (minutes < 0) minutes = 0
+  var when = new Date(date.getFullYear(), date.getMonth(), date.getDate(),
+                      Math.floor(minutes / 60), minutes % 60, 0)
+  if (addMinutes) when = new Date(when.getTime() + Math.round(addMinutes) * 60000)
+  var offset = -when.getTimezoneOffset()
+  var sign = offset >= 0 ? "+" : "-"
+  var abs = Math.abs(offset)
+  return toISO(when) + "T" + pad2(when.getHours()) + ":" + pad2(when.getMinutes()) + ":00"
+       + sign + pad2(Math.floor(abs / 60)) + ":" + pad2(abs % 60)
+}
+
+// Merge the local store with each synced source for display. Remote events keep
+// their own ids, so nothing can collide with a local one.
+function mergeSources(local, remoteLists) {
+  var out = (local || []).slice(0)
+  var lists = remoteLists || []
+  for (var i = 0; i < lists.length; i++) {
+    var list = lists[i] || []
+    for (var j = 0; j < list.length; j++) out.push(list[j])
+  }
+  return sortEvents(out)
+}
+
 // ---------------------------------------------------------------- recurrence
 
 // Does an occurrence *begin* on `iso`? The first is always event.date; a repeat
@@ -744,6 +889,7 @@ function eventsOn(events, iso) {
     out.push({
       id: e.id, title: e.title, date: e.date, iso: iso, time: e.time,
       durationMin: e.durationMin, notes: e.notes, location: e.location, color: e.color,
+      source: e.source, remoteId: e.remoteId, etag: e.etag,
       repeat: e.repeat, until: e.until,
       // Where this day sits in the run: the grid draws caps from it, and the
       // agenda says "day 2 of 4" rather than repeating the start time.
@@ -1098,6 +1244,11 @@ if (typeof module !== "undefined") {
     marksInRange: marksInRange,
     marksForMonth: marksForMonth,
     parsePalette: parsePalette,
+    parseGoogleEvent: parseGoogleEvent,
+    parseGoogleEvents: parseGoogleEvents,
+    toGoogleEvent: toGoogleEvent,
+    localISO: localISO,
+    mergeSources: mergeSources,
     normalizeColor: normalizeColor,
     colorHex: colorHex,
     colorEntry: colorEntry,

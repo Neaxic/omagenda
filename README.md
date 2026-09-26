@@ -75,6 +75,8 @@ omarchy restart shell
 | `EventCompose.qml`  | The new/edit form, built from `FormField` and `SegmentedToggle`          |
 | `FormField.qml`     | A labelled input closed by a rule rather than a box                      |
 | `SegmentedToggle.qml`, `OutlineButton.qml` | The two controls the design uses everywhere      |
+| `bin/gcal`          | Everything Google: OAuth, token refresh, calendar and event calls        |
+| `docs/google-setup.md` | The one-off Cloud console setup                                       |
 | `tests/`            | `node --test tests/` over `Model.js`                                     |
 
 `Service.qml` is mounted once per session; the bar widgets (one per monitor)
@@ -103,6 +105,8 @@ it on the other too.
 - `time` omitted or `""` means all day, and sorts ahead of timed events.
 - `durationMin` gives the card its "14:00 – 15:00"; `location` its place.
 - `days` is the span in days, counting the first (see **Multi-day events**).
+- `source`, `remoteId` and `etag` appear on synced events; local events leave
+  them empty.
 - `color` is one of `clay`, `sand`, `moss`, `sky`, `slate`, `plum`; omitted means
   no colour. Older stores using terminal names (`green`, `magenta`, …) still read.
 - `repeat` is `daily`, `weekly`, `monthly` or `yearly`, walking forward from
@@ -165,6 +169,50 @@ In the store it is one integer:
 file with an end date works; it is written back as `days`. The span is a length
 rather than a fixed end because a repeat has to carry it: a three-day shift that
 repeats weekly is three days *every* week.
+
+## Syncing with Google Calendar
+
+Datebook talks to Google directly, two-way: your Google events appear in the
+bar, and an event created here lands in Google. Setup is a one-off five minutes
+in the Cloud console — **[docs/google-setup.md](docs/google-setup.md)** walks
+through it.
+
+The shape of it:
+
+- **Calendars are sources.** The local JSON store is one, each Google calendar
+  is another, listed in `~/.config/datebook/sources.json`. A source has a name,
+  a colour its events take, and an enabled flag.
+- **Synced events live in their own cache** (`cache.json`), never merged into
+  `events.json`. A sync cannot touch what you wrote locally, and a local edit
+  cannot touch Google. They are only merged for display.
+- **Colour says which calendar**, which is the convention everywhere else (see
+  **Colour**): an event takes its source's colour unless it sets its own.
+- **Incremental.** Google hands back a sync token and is then only asked what
+  changed. When a token gets too old Google says so and Datebook retakes that
+  calendar in full, silently.
+- **Writes go where the event lives.** Editing a Google event PATCHes it in
+  Google; editing a local one rewrites the JSON. The compose form's CALENDAR
+  switch picks which, and moving an event between calendars removes and
+  recreates it, since neither side can move it in place.
+- **Read-only calendars** (a subscribed feed, someone else's shared calendar)
+  show their events and hide EDIT and DELETE.
+
+```bash
+bin/gcal login                                           # once, opens a browser
+bin/gcal calendars                                       # ids and access roles
+omarchy-shell datebook sourceAdd "you@gmail.com" "Personal" sky
+omarchy-shell datebook sync true                         # true = full, not incremental
+omarchy-shell datebook syncStatus
+```
+
+Everything Google-facing is in `bin/gcal` — OAuth, token refresh, and the four
+API calls the plugin makes — written against the standard library alone, so the
+plugin stays a git clone with nothing to install. Tokens live in
+`~/.config/datebook/google-tokens.json` at `0600` and are never logged.
+
+One caveat worth repeating from the setup guide: **publish the OAuth consent
+screen to *In production***. Left in *Testing*, Google expires refresh tokens
+after seven days and sync stops until you sign in again.
 
 ## Colour
 
