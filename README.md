@@ -46,17 +46,76 @@ Four pages, all inside the one popup:
 | `month`   | the default, or WEEKS / MONTH     | the grid above, plus the selected day's agenda      |
 | `year`    | the YEAR half of the switch       | twelve miniatures, a mark per day, events brighter |
 | `detail`  | the chevron on an event           | one event's facts, with edit and delete            |
-| `compose` | `+`, NEW EVENT, or EDIT           | title, date, time, length, place and a repeat      |
+| `compose` | NEW EVENT, or EDIT on an event    | title, date, days, time, length, place, colour, calendar, repeat |
+
+## Where this stands
+
+Written to a mockup over one session on **26 September 2026**, and installed:
+the plugin is enabled in the centre of the bar and everything below works on
+screen. 63 node assertions, `omarchy plugin validate` and `qmllint` clean.
+
+**Working, seen on screen**
+
+- The rolling grid (the week you are in plus two), MONTH expanding it to a whole
+  month, and the YEAR page of twelve miniatures.
+- The day agenda, the event detail page, and the compose form — create, edit and
+  delete, including colours and multi-day runs.
+- Events stored in `~/.config/datebook/events.json`, watched, hand-editable.
+
+**Built but never run against the real service: Google sync**
+
+The whole path exists — OAuth, token refresh, incremental pulls, write-through,
+the sources model, the CALENDAR switch in compose — and was verified end to end
+with a stubbed `bin/gcal` standing in for Google. It has **never talked to
+Google**, because that needs credentials only you can create.
+
+Picking it up is four steps, all in **[docs/google-setup.md](docs/google-setup.md)**:
+
+```bash
+# 1. Cloud console: new project, enable the Calendar API,
+#    publish the OAuth consent screen, make a Desktop client,
+#    write ~/.config/datebook/google-client.json      (see the doc)
+bin/gcal login                                        # 2. browser consent, once
+bin/gcal calendars                                    # 3. the ids you want
+omarchy-shell datebook sourceAdd "you@gmail.com" "Personal" sky
+omarchy-shell datebook sync true                      # 4. first full pass
+omarchy-shell datebook syncStatus                     #    and what it made of it
+```
+
+If step 4 reports an error, the table at the end of the setup doc maps each one
+to the step that was missed.
+
+**The store currently holds eight demo events** — Design review, Standup, Ship
+v0.2, Dinner, Sprint planning, and three runs (Berlin trip, Sprint 12, Design
+workshop) — added to photograph the grid. Clear them whenever real use starts:
+
+```bash
+rm ~/.config/datebook/events.json     # the service writes a fresh empty one
+```
+
+**Not built**
+
+- Repeats on a synced calendar — the compose form refuses them, since Google
+  models recurrence in ways this store does not. Local repeats are unaffected.
+- Editing a single occurrence of a repeat: edit and delete act on the series.
+- Notifications or alerts before an event.
+- An in-panel settings page; settings are the manifest schema plus
+  `~/.config/omarchy/shell.json`, and calendars are added over IPC.
+- Any provider other than Google. The sources model is provider-agnostic, so an
+  ICS or CalDAV source would slot in beside `kind: "google"`.
 
 ## Install
 
-It is a plain plugin directory, so it is already where it needs to be:
+Already done on this machine (see above). On a fresh one it is a plain plugin
+directory, so it only needs discovering:
 
 ```bash
 omarchy-shell shell rescanPlugins
 omarchy plugin enable datebook center     # or left / right
 omarchy restart shell
 ```
+
+To take it back out: `omarchy plugin disable datebook`.
 
 ## Layout
 
