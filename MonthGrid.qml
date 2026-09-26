@@ -22,7 +22,24 @@ Column {
 
   readonly property real gutterWidth: chrome ? chrome.gutter : 33
   readonly property real cellWidth: (width - gutterWidth) / 7
-  readonly property real rowHeight: chrome ? chrome.rowHeight : 63
+
+  // Multi-day events are drawn as bars across the days they cover, stacked in
+  // lanes. Every row grows by the same amount so the grid stays even, and only
+  // when something actually runs across it.
+  readonly property real barHeight: Math.max(2, Style.space(3))
+  readonly property real barGap: Math.max(1, Style.space(2))
+  readonly property real barInset: Style.space(4)
+  readonly property real barBottom: Style.space(10)
+  readonly property int laneCount: {
+    var most = 0
+    for (var i = 0; i < weeks.length; i++) {
+      var segs = weeks[i].segments || []
+      for (var j = 0; j < segs.length; j++) most = Math.max(most, segs[j].lane + 1)
+    }
+    return Math.min(4, most)
+  }
+  readonly property real laneStep: barHeight + barGap
+  readonly property real rowHeight: (chrome ? chrome.rowHeight : 63) + laneCount * laneStep
 
   spacing: 0
 
@@ -66,6 +83,34 @@ Column {
         color: root.chrome ? root.chrome.faint : "transparent"
         font.family: root.chrome ? root.chrome.fontFamily : "monospace"
         font.pixelSize: root.chrome ? root.chrome.labelSize : 10
+      }
+
+      // The bars sit above the cells but take no clicks, so the days underneath
+      // stay selectable.
+      Item {
+        x: root.gutterWidth
+        width: root.cellWidth * 7
+        height: parent.height
+        z: 1
+        opacity: weekRow.fade
+
+        Repeater {
+          model: weekRow.week.segments || []
+
+          delegate: Rectangle {
+            required property var modelData
+            readonly property bool openLeft: modelData.continuesBefore
+            readonly property bool openRight: modelData.continuesAfter
+
+            x: modelData.startCol * root.cellWidth + (openLeft ? 0 : root.barInset)
+            width: (modelData.endCol - modelData.startCol + 1) * root.cellWidth
+                   - (openLeft ? 0 : root.barInset) - (openRight ? 0 : root.barInset)
+            height: root.barHeight
+            y: parent.height - root.barBottom - root.barHeight - modelData.lane * root.laneStep
+            visible: modelData.lane < root.laneCount
+            color: root.chrome ? root.chrome.eventInk(modelData.color) : "transparent"
+          }
+        }
       }
 
       Row {
@@ -130,12 +175,15 @@ Column {
             Row {
               x: root.chrome ? root.chrome.cellPad : 12
               anchors.bottom: parent.bottom
-              anchors.bottomMargin: Style.space(16)
+              anchors.bottomMargin: root.barBottom + root.laneCount * root.laneStep + Style.space(4)
               spacing: Style.space(4)
 
               Repeater {
-                // One dot per event, each in that event's own colour.
-                model: Math.min(3, dayCell.day.count)
+                // One dot per single-day event, each in its own colour. Runs are
+                // counted in `count` but drawn as bars, so the dots follow the
+                // colour list instead — otherwise every day a run passes through
+                // would also carry an inkless dot.
+                model: Math.min(3, (dayCell.day.colors || []).length)
 
                 delegate: Rectangle {
                   required property int index

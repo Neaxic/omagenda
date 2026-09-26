@@ -189,9 +189,14 @@ function monthWeeks(year, month, options) {
         colors: mark ? mark.colors : []
       })
     }
+    var rowStart = days.length > 0 && days[0].iso !== ""
+      ? days[0].iso
+      : toISO(new Date(year, month, r * 7 - lead + 1))
     weeks.push({
       week: anchor === null ? 0 : isoWeek(new Date(year, month, anchor)),
-      days: days
+      start: rowStart,
+      days: days,
+      segments: o.events ? weekSegments(o.events, rowStart) : []
     })
   }
   return weeks
@@ -205,6 +210,67 @@ function addMonthsToISO(iso, delta) {
   var moved = addMonths(date.getFullYear(), date.getMonth(), Math.round(delta))
   var day = Math.min(date.getDate(), daysInMonth(moved.year, moved.month))
   return toISO(new Date(moved.year, moved.month, day))
+}
+
+// The runs crossing one week, as bars the grid can draw: a multi-day event
+// clipped to the week it is passing through, with caps telling you whether it
+// began here and whether it ends here.
+//
+//   { id, title, color, startCol, endCol, continuesBefore, continuesAfter, lane }
+//
+// `lane` is the stacking row inside the week, assigned greedily: each segment
+// takes the lowest lane it does not collide in, which is how every calendar
+// keeps two overlapping runs from drawing over each other.
+function weekSegments(events, weekStartISO, options) {
+  var o = options || {}
+  var weekStart = weekStartISO
+  var weekEnd = shiftISO(weekStart, 6)
+  var found = []
+
+  for (var i = 0; i < events.length; i++) {
+    var e = events[i]
+    var span = Math.max(1, Math.round(e.days || 1))
+    if (span < 2) continue                       // single days are dots
+
+    // A run can have begun before this week, so walk back its own length.
+    for (var d = -(span - 1); d <= 6; d++) {
+      var start = shiftISO(weekStart, d)
+      if (start < e.date) continue
+      if (!startsOn(e, start)) continue
+      var end = shiftISO(start, span - 1)
+      if (end < weekStart || start > weekEnd) continue
+      found.push({
+        id: e.id,
+        title: e.title,
+        color: e.color,
+        startISO: start,
+        endISO: end,
+        startCol: Math.max(0, daysBetween(weekStart, start)),
+        endCol: Math.min(6, daysBetween(weekStart, end)),
+        continuesBefore: start < weekStart,
+        continuesAfter: end > weekEnd,
+        lane: 0
+      })
+    }
+  }
+
+  // Longest first at the same start, so the run that shapes the week sits on top.
+  found.sort(function(a, b) {
+    if (a.startCol !== b.startCol) return a.startCol - b.startCol
+    var lena = a.endCol - a.startCol, lenb = b.endCol - b.startCol
+    if (lena !== lenb) return lenb - lena
+    return a.title < b.title ? -1 : (a.title > b.title ? 1 : 0)
+  })
+
+  var lanes = []                                  // lanes[n] = last column used
+  for (var j = 0; j < found.length; j++) {
+    var seg = found[j]
+    var lane = 0
+    while (lanes[lane] !== undefined && lanes[lane] >= seg.startCol) lane++
+    lanes[lane] = seg.endCol
+    seg.lane = lane
+  }
+  return found
 }
 
 // The Monday (or Sunday) that opens the week `iso` falls in.
@@ -252,7 +318,13 @@ function weeksFrom(startISO, count, options) {
         colors: mark ? mark.colors : []
       })
     }
-    weeks.push({ week: isoWeek(fromISO(shiftISO(first, w * 7))), days: days })
+    var weekStart = shiftISO(first, w * 7)
+    weeks.push({
+      week: isoWeek(fromISO(weekStart)),
+      start: weekStart,
+      days: days,
+      segments: o.events ? weekSegments(o.events, weekStart) : []
+    })
   }
   return weeks
 }
@@ -432,10 +504,19 @@ function normalizeEvent(raw) {
   if (!isISODate(date) || !fromISO(date)) return null
   var title = trim(raw.title)
   if (title === "") return null
+  // `days` is the span, counting the first day. `endDate` is accepted as sugar
+  // for hand-edited files and folded into it, because a repeat has to carry a
+  // length rather than a fixed end: each occurrence gets the same span.
+  var days = Math.round(Number(raw.days) || 0)
+  if (days < 1 && isISODate(raw.endDate) && fromISO(raw.endDate)) {
+    var spanned = daysBetween(date, raw.endDate) + 1
+    if (spanned > 1) days = spanned
+  }
   return {
     id: trim(raw.id),
     title: title,
     date: date,
+    days: Math.max(1, Math.min(366, days || 1)),
     time: normalizeTime(raw.time),
     durationMin: Math.max(0, Math.round(Number(raw.durationMin) || 0)),
     notes: trim(raw.notes),
@@ -465,8 +546,9 @@ function ensureIds(events, randomFn) {
     while (id === "" || seen[id]) id = newId(e.date, randomFn)
     seen[id] = true
     out.push({
-      id: id, title: e.title, date: e.date, time: e.time, durationMin: e.durationMin,
-      notes: e.notes, location: e.location, color: e.color, repeat: e.repeat, until: e.until
+      id: id, title: e.title, date: e.date, days: e.days, time: e.time,
+      durationMin: e.durationMin, notes: e.notes, location: e.location,
+      color: e.color, repeat: e.repeat, until: e.until
     })
   }
   return out
@@ -499,6 +581,7 @@ function serializeStore(events) {
   for (var i = 0; i < events.length; i++) {
     var e = events[i]
     var out = { id: e.id, title: e.title, date: e.date }
+    if (e.days > 1) out.days = e.days
     if (e.time !== "") out.time = e.time
     if (e.durationMin > 0) out.durationMin = e.durationMin
     if (e.notes !== "") out.notes = e.notes
@@ -530,9 +613,9 @@ function removeEvent(events, id) {
 
 // ---------------------------------------------------------------- recurrence
 
-// Does `event` land on `iso`? The first occurrence is always event.date; a
-// repeat then walks forward only, and stops after `until` when one is set.
-function occursOn(event, iso) {
+// Does an occurrence *begin* on `iso`? The first is always event.date; a repeat
+// then walks forward only, and stops after `until` when one is set.
+function startsOn(event, iso) {
   if (!event || !isISODate(iso)) return false
   if (event.date === iso) return true
   if (event.repeat === "none") return false
@@ -554,22 +637,63 @@ function occursOn(event, iso) {
   return false
 }
 
+// The day an occurrence covering `iso` began, or "" when none does. A one-day
+// event only covers its own start; a span reaches back up to days-1.
+function occurrenceStart(event, iso) {
+  if (!event || !isISODate(iso)) return ""
+  var span = Math.max(1, Math.round(event.days || 1))
+  for (var back = 0; back < span; back++) {
+    var candidate = shiftISO(iso, -back)
+    if (candidate < event.date) break        // before the series began
+    if (startsOn(event, candidate)) return candidate
+  }
+  return ""
+}
+
+function occursOn(event, iso) {
+  return occurrenceStart(event, iso) !== ""
+}
+
 // Occurrences on one day, in display order. Each is a copy of the event with
 // `iso` set to the day asked for and `recurring` telling it apart from the
 // original, so the UI can label a repeat without re-deriving anything.
 function eventsOn(events, iso) {
   var out = []
   for (var i = 0; i < events.length; i++) {
-    if (!occursOn(events[i], iso)) continue
     var e = events[i]
+    var start = occurrenceStart(e, iso)
+    if (start === "") continue
+    var span = Math.max(1, Math.round(e.days || 1))
+    var index = daysBetween(start, iso)
     out.push({
       id: e.id, title: e.title, date: e.date, iso: iso, time: e.time,
       durationMin: e.durationMin, notes: e.notes, location: e.location, color: e.color,
       repeat: e.repeat, until: e.until,
-      recurring: e.repeat !== "none" && e.date !== iso
+      // Where this day sits in the run: the grid draws caps from it, and the
+      // agenda says "day 2 of 4" rather than repeating the start time.
+      days: span,
+      startISO: start,
+      endISO: shiftISO(start, span - 1),
+      dayIndex: index,
+      isStart: index === 0,
+      isEnd: index === span - 1,
+      spans: span > 1,
+      recurring: e.repeat !== "none" && e.date !== start
     })
   }
-  return sortEvents(out)
+  return sortOccurrences(out)
+}
+
+// A day reads top down: runs that pass through it first (they are the day's
+// shape), then all-day events, then the timed ones in order.
+function sortOccurrences(list) {
+  return list.slice(0).sort(function(a, b) {
+    if (a.spans !== b.spans) return a.spans ? -1 : 1
+    if (a.spans && b.spans && a.days !== b.days) return b.days - a.days
+    var ma = minutesOfDay(a.time), mb = minutesOfDay(b.time)
+    if (ma !== mb) return ma - mb
+    return a.title < b.title ? -1 : (a.title > b.title ? 1 : 0)
+  })
 }
 
 // iso -> { count, colors: [key, ...] } over an inclusive date range. The grid
@@ -582,8 +706,10 @@ function marksInRange(events, fromIso, days) {
   for (var d = 0; d < span; d++) {
     var onDay = eventsOn(events, iso)
     if (onDay.length > 0) {
+      // Only single-day events become dots; a run is drawn as a bar across the
+      // days it covers, so a dot under it would say the same thing twice.
       var colors = []
-      for (var i = 0; i < onDay.length; i++) colors.push(onDay[i].color)
+      for (var i = 0; i < onDay.length; i++) if (!onDay[i].spans) colors.push(onDay[i].color)
       marks[iso] = { count: onDay.length, colors: colors }
     }
     iso = shiftISO(iso, 1)
@@ -784,6 +910,22 @@ function endTime(time, durationMin) {
   return pad2(Math.floor(end / 60)) + ":" + pad2(end % 60)
 }
 
+// "28 Sep → 2 Oct" for a run, with "Day 3/5" in front once you are inside it and
+// the time appended when it has one. A run's shape matters more than its clock.
+function spanLabel(occurrence, use24) {
+  if (!occurrence || !occurrence.spans) return ""
+  var from = fromISO(occurrence.startISO), to = fromISO(occurrence.endISO)
+  if (!from || !to) return ""
+  var range = from.getDate() + " " + MONTH_SHORT[from.getMonth()]
+             + " → " + to.getDate() + " " + MONTH_SHORT[to.getMonth()]
+  var parts = []
+  if (!occurrence.isStart) parts.push("Day " + (occurrence.dayIndex + 1) + "/" + occurrence.days)
+  parts.push(range)
+  var time = formatTime(occurrence.time, use24)
+  if (time !== "") parts.push(time)
+  return parts.join("  ·  ")
+}
+
 // "14:00 – 15:00", "14:00", or "All day" — the event card's time line.
 function timeRange(occurrence, use24) {
   if (!occurrence) return ""
@@ -860,6 +1002,9 @@ if (typeof module !== "undefined") {
     weekdayPairs: weekdayPairs,
     monthWeeks: monthWeeks,
     startOfWeek: startOfWeek,
+    weekSegments: weekSegments,
+    startsOn: startsOn,
+    occurrenceStart: occurrenceStart,
     addMonthsToISO: addMonthsToISO,
     weeksFrom: weeksFrom,
     windowLabel: windowLabel,
@@ -895,6 +1040,7 @@ if (typeof module !== "undefined") {
     formatTime: formatTime,
     endTime: endTime,
     timeRange: timeRange,
+    spanLabel: spanLabel,
     dayHeading: dayHeading,
     upperMonth: upperMonth,
     countLabel: countLabel,

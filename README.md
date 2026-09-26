@@ -18,7 +18,10 @@ one; the year page always opens a month that way.
 │         MO    TU    WE    TH    FR    SA    SU    └──────┘ │
 │  ───────────────────────────────────────────────────────── │
 │   39 │ 21  │ 22  │ 23  │ 24  │ 25  │[26]·│ 27      ← now   │
+│      │ ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▶     ← a run   │
 │   40 │ 28 ·│ 29 ··│ 30 │  1  │  2 ·│  3  │  4              │
+│      │ ◀▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬     continued │
+│      │     │     │ ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬     lane 2    │
 │   41 │  5 ·│  6 · │  7 │  8  │  9  │ 10  │ 11      ← faded │
 │  ───────────────────────────────────────────────────────── │
 │  ───────────────────────────────────────────────────────── │
@@ -100,6 +103,7 @@ it on the other too.
 - `date` and `time` are local; the file holds no timezones.
 - `time` omitted or `""` means all day, and sorts ahead of timed events.
 - `durationMin` gives the card its "14:00 – 15:00"; `location` its place.
+- `days` is the span in days, counting the first (see **Multi-day events**).
 - `color` is one of `clay`, `sand`, `moss`, `sky`, `slate`, `plum`; omitted means
   no colour. Older stores using terminal names (`green`, `magenta`, …) still read.
 - `repeat` is `daily`, `weekly`, `monthly` or `yearly`, walking forward from
@@ -123,7 +127,7 @@ newer in-panel edit.
 | YEAR         | Twelve miniatures; click a month to open it whole   |
 | `«` `»`      | Page a month, keeping the day of the month where it can |
 | Event band   | Click anywhere on it for the detail page, then EDIT or DELETE |
-| NEW EVENT    | The compose form: title, date, time, minutes, place, colour, repeat |
+| NEW EVENT    | The compose form: title, date, days, time, minutes, place, colour, repeat |
 
 Keys while the popup has focus: arrows walk days and weeks (months on the year
 page), `Return`/`a` opens the compose form, `t` today, `n`/`p` step the grid — a
@@ -131,6 +135,37 @@ week rolling, a month expanded, a year on the year page — `,`/`.` page a month
 `m` expands or collapses the grid, `y` toggles the year page, `o` opens
 `events.json`. `Esc` steps back a page, or closes the popup from the
 calendar.
+
+## Multi-day events
+
+An event with `days` greater than 1 stops being a dot and becomes a bar drawn
+across the days it covers:
+
+- It is **clipped to the week** it is passing through and redrawn on the next
+  row, so a fortnight-long run appears on both. A clipped end runs flush to the
+  edge of the grid; an end that really is the end is inset, which is what tells
+  you whether the run stops there or carries on.
+- Overlapping runs **stack in lanes**, assigned greedily — each run takes the
+  lowest lane it does not collide in. That is how every calendar keeps two runs
+  from drawing over each other.
+- Every row grows by the same amount to make space, so the grid stays even and
+  only gets taller when something actually runs across it.
+- **Dots are for single-day events only.** A day inside a run does not also get
+  a dot: the bar already says the event is there.
+- In the agenda a run leads with its shape rather than its clock —
+  `Day 6/14 · 21 Sep → 4 Oct` — and sorts above the day's timed events, longest
+  first, which is the order the day actually reads in.
+
+In the store it is one integer:
+
+```json
+{ "id": "20260921-a1b2", "title": "Sprint 12", "date": "2026-09-21", "days": 14, "color": "moss" }
+```
+
+`endDate` is accepted when reading and folded into `days`, so hand-editing the
+file with an end date works; it is written back as `days`. The span is a length
+rather than a fixed end because a repeat has to carry it: a three-day shift that
+repeats weekly is three days *every* week.
 
 ## Colour
 
@@ -210,6 +245,7 @@ omarchy-shell datebook today
 omarchy-shell datebook page year ""          # month | year | detail <id> | compose [id]
 omarchy-shell datebook event 20261002-3f2a   # one event, as the detail page sees it
 omarchy-shell datebook compose "" '{"title":"Sprint planning","date":"2026-09-28","time":"10:30","durationMin":90,"location":"Room 4","color":"moss","repeat":"weekly"}'
+omarchy-shell datebook compose "" '{"title":"Berlin trip","date":"2026-09-30","days":5,"color":"sky"}'
 omarchy-shell datebook remove 20261002-3f2a
 omarchy-shell datebook setOption showWeekNumbers false
 omarchy-shell datebook toggle           # open/close the popup
@@ -222,7 +258,8 @@ omarchy-shell datebook path
   the date is already in the masthead and the grid, the bands are their own
   count, and NEW EVENT at the foot does what the `+` did. An empty day drops the
   band altogether rather than reading "Nothing planned".
-- Events can be **colour-coded**, which the mockup does not show at all.
+- Events can be **colour-coded** and can **run across days as bars**, neither of
+  which the mockup shows at all.
 - The grid **rolls three weeks from the current one** rather than showing a whole
   month — which is what the mockup itself shows (weeks 39, 40, 41), and the
   pager under it moves by a week, not a month.

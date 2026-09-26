@@ -286,6 +286,111 @@ test("upsertEvent replaces by id and removeEvent drops by id", () => {
   assert.deepEqual(M.removeEvent(base, "a").map(e => e.id), ["b"])
 })
 
+// --- multi-day runs ---------------------------------------------------------
+
+test("a span covers every day it runs through", () => {
+  const trip = ev({ id: "t", date: "2026-09-28", days: 5 })
+  assert.equal(M.occursOn(trip, "2026-09-27"), false)
+  assert.equal(M.occursOn(trip, "2026-09-28"), true)
+  assert.equal(M.occursOn(trip, "2026-10-02"), true)     // the fifth day
+  assert.equal(M.occursOn(trip, "2026-10-03"), false)
+  const middle = M.eventsOn([trip], "2026-09-30")[0]
+  assert.equal(middle.dayIndex, 2)
+  assert.equal(middle.isStart, false)
+  assert.equal(middle.isEnd, false)
+  assert.equal(middle.startISO, "2026-09-28")
+  assert.equal(middle.endISO, "2026-10-02")
+  assert.equal(middle.spans, true)
+})
+
+test("endDate is folded into a span on the way in", () => {
+  assert.equal(M.normalizeEvent({ title: "T", date: "2026-09-28", endDate: "2026-09-30" }).days, 3)
+  // A backwards or equal endDate is simply a one-day event.
+  assert.equal(M.normalizeEvent({ title: "T", date: "2026-09-28", endDate: "2026-09-27" }).days, 1)
+  assert.equal(M.normalizeEvent({ title: "T", date: "2026-09-28" }).days, 1)
+  // days survives the store; a one-day event writes no span.
+  assert.equal(M.parseStore(M.serializeStore([ev({ days: 4 })]))[0].days, 4)
+  assert.equal(M.serializeStore([ev()]).includes("days"), false)
+})
+
+test("a repeat carries its span to every occurrence", () => {
+  const shift = ev({ id: "s", date: "2026-09-28", days: 3, repeat: "weekly" })
+  assert.equal(M.occursOn(shift, "2026-09-30"), true)    // day 3 of the first
+  assert.equal(M.occursOn(shift, "2026-10-01"), false)   // the gap
+  assert.equal(M.occursOn(shift, "2026-10-05"), true)    // the next week's day 1
+  assert.equal(M.eventsOn([shift], "2026-10-07")[0].dayIndex, 2)
+})
+
+test("runs sort above the rest of the day, longest first", () => {
+  const list = M.eventsOn([
+    ev({ id: "a", date: "2026-09-28", time: "09:00", title: "Standup" }),
+    ev({ id: "b", date: "2026-09-27", days: 4, title: "Trip" }),
+    ev({ id: "c", date: "2026-09-28", days: 2, title: "Workshop" })
+  ], "2026-09-28")
+  assert.deepEqual(list.map(e => e.title), ["Trip", "Workshop", "Standup"])
+})
+
+test("a run is a bar, not dots", () => {
+  const events = [ev({ id: "t", date: "2026-09-28", days: 3, color: "sky" }),
+                  ev({ id: "d", date: "2026-09-28", color: "clay" })]
+  const marks = M.marksInRange(events, "2026-09-28", 1)
+  assert.equal(marks["2026-09-28"].count, 2)             // both are on that day
+  assert.deepEqual(marks["2026-09-28"].colors, ["clay"]) // only the single day dots
+})
+
+test("weekSegments clips a run to the week and flags the open ends", () => {
+  const events = [ev({ id: "s", date: "2026-09-21", days: 14, title: "Sprint" })]
+  const first = M.weekSegments(events, "2026-09-21")[0]
+  assert.equal(first.startCol, 0)
+  assert.equal(first.endCol, 6)
+  assert.equal(first.continuesBefore, false)
+  assert.equal(first.continuesAfter, true)
+  const second = M.weekSegments(events, "2026-09-28")[0]
+  assert.equal(second.continuesBefore, true)
+  assert.equal(second.continuesAfter, false)
+  assert.equal(second.endCol, 6)
+  assert.equal(M.weekSegments(events, "2026-10-05").length, 0)
+})
+
+test("weekSegments stacks overlapping runs into lanes", () => {
+  const events = [
+    ev({ id: "s", date: "2026-09-21", days: 14, title: "Sprint" }),
+    ev({ id: "t", date: "2026-09-28", days: 5, title: "Trip" }),
+    ev({ id: "c", date: "2026-09-30", days: 2, title: "Conference" })
+  ]
+  const segs = M.weekSegments(events, "2026-09-28")
+  assert.deepEqual(segs.map(s => s.title + ":" + s.lane), ["Sprint:0", "Trip:1", "Conference:2"])
+  // Runs that do not overlap share a lane.
+  const apart = M.weekSegments([
+    ev({ id: "a", date: "2026-09-28", days: 2, title: "A" }),
+    ev({ id: "b", date: "2026-10-01", days: 2, title: "B" })
+  ], "2026-09-28")
+  assert.deepEqual(apart.map(s => s.lane), [0, 0])
+})
+
+test("a single-day event never becomes a segment", () => {
+  assert.equal(M.weekSegments([ev({ date: "2026-09-28" })], "2026-09-28").length, 0)
+})
+
+test("the grid rows carry their own segments", () => {
+  const events = [ev({ id: "t", date: "2026-09-28", days: 5, title: "Trip" })]
+  const weeks = M.weeksFrom("2026-09-26", 3, { events })
+  assert.equal(weeks[0].segments.length, 0)              // the run starts next week
+  assert.equal(weeks[1].segments[0].title, "Trip")
+  assert.equal(weeks[1].start, "2026-09-28")
+  // No events passed in means no bars, which is what the year miniatures want.
+  assert.deepEqual(M.weeksFrom("2026-09-26", 3, {})[1].segments, [])
+})
+
+test("spanLabel says the shape of the run", () => {
+  const trip = [ev({ id: "t", date: "2026-09-28", days: 5 })]
+  assert.equal(M.spanLabel(M.eventsOn(trip, "2026-09-28")[0], true), "28 Sep → 2 Oct")
+  assert.equal(M.spanLabel(M.eventsOn(trip, "2026-09-30")[0], true), "Day 3/5  ·  28 Sep → 2 Oct")
+  const timed = M.eventsOn([ev({ id: "x", date: "2026-09-28", days: 2, time: "09:00" })], "2026-09-28")[0]
+  assert.equal(M.spanLabel(timed, true), "28 Sep → 29 Sep  ·  09:00")
+  assert.equal(M.spanLabel(M.eventsOn([ev()], "2026-09-26")[0], true), "")
+})
+
 // --- recurrence -------------------------------------------------------------
 
 test("repeats only ever walk forward from their own date", () => {

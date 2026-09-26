@@ -13,7 +13,7 @@ Column {
   property string editingId: ""      // "" while creating
   property string error: ""
 
-  // { title, date, time, durationMin, location, repeat }
+  // { title, date, days, time, durationMin, location, color, repeat }
   signal saved(var values)
   signal cancelled()
 
@@ -25,6 +25,7 @@ Column {
   function load(occurrence) {
     if (!occurrence) {
       titleField.text = ""
+      daysField.text = ""
       timeField.text = ""
       lengthField.text = ""
       placeField.text = ""
@@ -33,6 +34,7 @@ Column {
       return
     }
     titleField.text = occurrence.title
+    daysField.text = occurrence.days > 1 ? String(occurrence.days) : ""
     timeField.text = occurrence.time
     lengthField.text = occurrence.durationMin > 0 ? String(occurrence.durationMin) : ""
     placeField.text = occurrence.location
@@ -46,6 +48,7 @@ Column {
     root.saved({
       title: titleField.text,
       date: dateField.text,
+      days: parseInt(daysField.text, 10) || 1,
       time: timeField.text,
       durationMin: parseInt(lengthField.text, 10) || 0,
       location: placeField.text,
@@ -55,7 +58,7 @@ Column {
   }
 
   readonly property bool anyFieldFocused: titleField.focused || dateField.focused
-    || timeField.focused || lengthField.focused || placeField.focused
+    || daysField.focused || timeField.focused || lengthField.focused || placeField.focused
 
   Text {
     text: root.editingId === "" ? "NEW EVENT" : "EDIT EVENT"
@@ -77,11 +80,15 @@ Column {
 
   Row {
     width: parent.width
-    spacing: Style.space(20)
+    spacing: Style.space(16)
+
+    // Four across: when it is, how long it runs, what time it starts and how
+    // long that sitting lasts.
+    readonly property real slot: (width - Style.space(48)) / 4
 
     FormField {
       id: dateField
-      width: (parent.width - Style.space(40)) / 3
+      width: parent.slot
       chrome: root.chrome
       label: "DATE"
       placeholder: "YYYY-MM-DD"
@@ -91,18 +98,28 @@ Column {
     }
 
     FormField {
+      id: daysField
+      width: parent.slot
+      chrome: root.chrome
+      label: "DAYS"
+      placeholder: "1"
+      onSubmitted: root.submit()
+      onEscaped: root.cancelled()
+    }
+
+    FormField {
       id: timeField
-      width: (parent.width - Style.space(40)) / 3
+      width: parent.slot
       chrome: root.chrome
       label: "TIME"
-      placeholder: "14:00 — blank for all day"
+      placeholder: "14:00"
       onSubmitted: root.submit()
       onEscaped: root.cancelled()
     }
 
     FormField {
       id: lengthField
-      width: (parent.width - Style.space(40)) / 3
+      width: parent.slot
       chrome: root.chrome
       label: "MINUTES"
       placeholder: "60"

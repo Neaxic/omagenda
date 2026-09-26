@@ -197,12 +197,14 @@ Item {
         mondayFirst: weekStartsMonday,
         showAdjacentMonths: true,
         todayISO: todayISO,
-        marks: monthMarks
+        marks: monthMarks,
+        events: events
       })
     : Model.weeksFrom(anchorISO, weeksShown, {
         mondayFirst: weekStartsMonday,
         todayISO: todayISO,
-        marks: windowMarks
+        marks: windowMarks,
+        events: events
       })
 
   // "SEPTEMBER 2026" for a month, or "SEP – OCT 2026" once a window straddles two.
@@ -303,6 +305,7 @@ Item {
     var raw = {
       title: values.title,
       date: values.date,
+      days: values.days,
       time: values.time,
       durationMin: values.durationMin,
       location: values.location,
@@ -313,6 +316,8 @@ Item {
     if (!Model.fromISO(String(values.date || ""))) return "Use a date like " + todayISO
     if (String(values.time || "") !== "" && Model.normalizeTime(values.time) === "")
       return "Use a time like 14:00, or leave it blank"
+    var span = Math.round(Number(values.days) || 1)
+    if (span < 1 || span > 366) return "A run is between 1 and 366 days"
 
     if (id !== "") {
       // Keep what the form does not ask about (notes, an until bound).

@@ -68,10 +68,16 @@ Column {
     Repeater {
       model: {
         if (!root.occurrence) return []
-        var rows = [
-          { label: "WHEN", value: Model.timeRange(root.occurrence, root.use24Hour) },
-          { label: "DATE", value: Model.formatDayLong(root.occurrence.iso) }
-        ]
+        var rows = root.occurrence.spans
+          ? [
+              { label: "WHEN", value: Model.spanLabel(root.occurrence, root.use24Hour) },
+              { label: "RUNS", value: Model.formatDayLong(root.occurrence.startISO)
+                                     + " → " + Model.formatDayLong(root.occurrence.endISO) }
+            ]
+          : [
+              { label: "WHEN", value: Model.timeRange(root.occurrence, root.use24Hour) },
+              { label: "DATE", value: Model.formatDayLong(root.occurrence.iso) }
+            ]
         if (root.occurrence.location !== "")
           rows.push({ label: "PLACE", value: root.occurrence.location })
         if (root.occurrence.repeat !== "none") {

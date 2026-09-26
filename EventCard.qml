@@ -18,7 +18,9 @@ Item {
 
   readonly property string metaLine: {
     if (!occurrence) return ""
-    var parts = [Model.timeRange(occurrence, use24Hour)]
+    var parts = [occurrence.spans
+      ? Model.spanLabel(occurrence, use24Hour)
+      : Model.timeRange(occurrence, use24Hour)]
     if (occurrence.recurring || occurrence.repeat !== "none")
       parts.push(Model.REPEAT_LABELS[occurrence.repeat])
     return parts.join("  ·  ")
@@ -65,7 +67,9 @@ Item {
 
       Text {
         anchors.verticalCenter: parent.verticalCenter
-        text: "\u{F0150}"                                  // clock-outline
+        text: root.occurrence && root.occurrence.spans
+          ? "\u{F0679}"                                     // calendar-range
+          : "\u{F0150}"                                     // clock-outline
         color: root.chrome ? root.chrome.dimmer : "transparent"
         font.family: root.chrome ? root.chrome.glyphFamily : "monospace"
         font.pixelSize: Style.font.caption
