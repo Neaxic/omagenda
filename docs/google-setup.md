@@ -1,128 +1,139 @@
-# Connecting Google Calendar
+# Google Calendar
 
-Datebook talks to Google directly, two-way: your Google events show in the bar,
-and events you create here land in Google. That needs an OAuth client, which
-Google only issues per project — so there is a one-off setup in the Cloud
-console. It takes about five minutes and you never have to touch it again.
+Two-way: your Google events show in the bar, and events you create here land in
+Google.
 
-Nothing here costs money: the Calendar API is free at this volume.
+## If you are using Datebook
 
-## 1. A project with the Calendar API on
+Open the popup, press **CALENDARS**, press **SYNC WITH GOOGLE CALENDAR**.
 
-1. Open <https://console.cloud.google.com/> and create a project — call it
-   `Datebook`, the name only ever shows on the consent screen.
-2. **APIs & Services → Library**, search *Google Calendar API*, press **Enable**.
+Your browser opens once, you allow it, and your primary calendar starts syncing.
+Any other calendar on the account — shared ones, a partner's, a team's — is a row
+on the same page; click it to add or drop it. Each gets its own colour.
 
-## 2. The consent screen, published
+There is nothing to copy and no key to find. Datebook's own OAuth client ships
+inside the plugin, so the Google project is the plugin's, not yours.
 
-**APIs & Services → OAuth consent screen**
+Two things worth knowing:
 
-1. User type **External**, then fill in the app name, your email as both the
-   support and developer contact. Nothing else is required.
-2. **Publish the app** — move it from *Testing* to *In production*.
+- **Google may warn you.** Until Google has finished reviewing the app
+  registration, consent is fronted by *"Google hasn't verified this app"*. Choose
+  **Advanced → Go to Datebook**. That screen is about the registration's review
+  status, not about anything Datebook does.
+- **What it asks for.** `calendar.events` (read and write events) and
+  `calendar.calendarlist.readonly` (see which calendars exist). Not the blanket
+  `calendar` scope: Datebook cannot create, rename or delete a calendar, only the
+  events inside one. Revoke any time from the page's **DISCONNECT**, or at
+  <https://myaccount.google.com/permissions>.
 
-That second step is the one that matters. A consent screen left in *Testing*
-issues refresh tokens that **expire after seven days**, so sync would quietly
-stop every week and you would have to sign in again. Published, they last until
-you revoke them.
+Tokens are stored at `~/.config/datebook/google-tokens.json`, `0600`. They never
+leave the machine — there is no Datebook server in the path, the plugin talks to
+Google directly.
 
-You do **not** need Google's verification review. An unverified app still works
-for its own author; it just shows a warning screen the first time you sign in
-(*"Google hasn't verified this app" → Advanced → Go to Datebook*). Verification
-only matters for shipping an app to strangers.
+## If you are shipping Datebook
 
-## 3. A desktop OAuth client
+`google-app.json` in the plugin root is empty in the repo. Until you fill it in, the
+calendars page says the build has no Google client and offers no button — which is the
+honest state, not a bug.
 
-**APIs & Services → Credentials → Create credentials → OAuth client ID**
+Filling it in is a one-off in the Google Cloud console, and getting the warning screen
+removed is a one-off review by Google. Both are walked start to finish, with the exact
+field values and the text to paste into the submission, in
+**[google-verification.md](google-verification.md)**.
 
-- Application type: **Desktop app**
-- Name: `Datebook`
+The short form:
 
-Copy the client ID and client secret, and write them to
+```bash
+# console: new project, enable the Calendar API, create a Desktop OAuth client
+bin/set-google-client '<id>.apps.googleusercontent.com' 'GOCSPX-<secret>'
+bin/gcal status        # clientOrigin: builtin
+bin/gcal connect       # browser consent, then the calendar list
+```
+
+Then **publish the consent screen to In production** — in *Testing*, Google expires
+refresh tokens after seven days, so sync would break every week.
+
+Commit `google-app.json` once it is filled in. A client shipped inside a desktop app is
+not a secret — anyone can read it out of the package — and [RFC 8252
+§8.5](https://datatracker.ietf.org/doc/html/rfc8252#section-8.5) says to expect exactly
+that, which is why Google's *Desktop app* type exists and why PKCE is mandatory here.
+The verifier, generated fresh per login and never stored, is what stops a stolen
+authorization code from being redeemed.
+
+## Bringing your own client
+
+Anyone who would rather answer to their own Cloud project can. Make a project with
+the Calendar API on and a **Desktop app** OAuth client — the first half of
+[google-verification.md](google-verification.md) — then write the credentials to
 `~/.config/datebook/google-client.json`:
 
 ```json
 {
-  "client_id": "1234567890-abcdefg.apps.googleusercontent.com",
-  "client_secret": "GOCSPX-xxxxxxxxxxxxxxxx"
+  "client_id": "…",
+  "client_secret": "…"
 }
 ```
 
-The JSON the console offers for download works as-is too — save it under that
-name and the `installed` wrapper is understood.
+The file the console offers for download works as-is — save it under that name
+and the `installed` wrapper is understood. It takes precedence over the shipped
+client, and the calendars page then says *your own Google project*.
 
-A desktop client's secret is not really a secret (it ships inside every copy of
-such an app), but the file is still written and read at `0600`, as are the
-tokens beside it.
-
-## 4. Sign in
+For a one-off or for testing, the environment wins over both:
 
 ```bash
-~/.config/omarchy/plugins/datebook/bin/gcal login
+DATEBOOK_GOOGLE_CLIENT_ID=… DATEBOOK_GOOGLE_CLIENT_SECRET=… bin/gcal status
 ```
 
-A browser opens, you allow the two scopes, and the tab says it is done. The
-tokens land in `~/.config/datebook/google-tokens.json` (`0600`).
+A client of your own is in Testing mode unless you publish it, so **publish the
+consent screen to In production** — in Testing, Google expires the refresh token
+after seven days and sync stops weekly. Verification you do not need: an
+unverified app still works for its own author, warning screen and all.
 
-The scopes asked for are deliberately narrow:
-
-| Scope | What it allows |
-|---|---|
-| `calendar.events` | read and write events on your calendars |
-| `calendar.calendarlist.readonly` | see which calendars exist |
-
-Not the blanket `calendar` scope: Datebook cannot create, rename or delete a
-calendar, only the events inside one.
-
-## 5. Add the calendars you want
+## The CLI, for scripting and debugging
 
 ```bash
-bin/gcal calendars                       # ids, names and access roles
-omarchy-shell datebook sourceAdd "you@gmail.com" "Personal" sky
-omarchy-shell datebook sourceAdd "family123@group.calendar.google.com" "Family" moss
-omarchy-shell datebook sync true
+bin/gcal status              # is there a client, where from, and a live grant?
+bin/gcal connect             # consent if needed, then the calendar list
+bin/gcal calendars           # ids, names, access roles
+bin/gcal logout              # forget and revoke
 ```
 
-The third argument is the colour its events take (`clay`, `sand`, `moss`, `sky`,
-`slate`, `plum`) unless an event sets its own — which is the usual calendar
-convention: colour tells you *which calendar*.
+and from the shell:
 
-Each calendar becomes a source in `~/.config/datebook/sources.json`, and its
-events are cached in `cache.json` beside it. The cache is never merged into your
-local `events.json`: a sync cannot touch what you wrote locally, and editing a
-local event cannot touch Google.
+```bash
+omarchy-shell datebook connect
+omarchy-shell datebook calendarToggle "family123@group.calendar.google.com"
+omarchy-shell datebook sourceColor "google:you@gmail.com" moss
+omarchy-shell datebook sync true       # true = ignore sync tokens, take it all again
+omarchy-shell datebook syncStatus
+omarchy-shell datebook disconnect
+```
 
 ## How syncing behaves
 
-- Every ten minutes, and on demand with `omarchy-shell datebook sync`.
-- Incremental: Google is asked only for what changed since the last pass, using
-  the sync token it hands back. When a token gets too old Google says so, and
-  Datebook silently retakes that calendar in full.
-- The first pass asks for a window — 120 days back, 400 forward — rather than
-  your entire history.
-- Recurring Google events arrive already expanded into instances, so a Google
-  rule Datebook could not model still shows up correctly.
+- Every ten minutes, and on demand from **SYNC NOW**.
+- Incremental: Google is asked only for what changed, using the sync token it
+  hands back. When a token gets too old Google says so, and Datebook silently
+  retakes that calendar in full.
+- The first pass asks for a window — 120 days back, 400 forward — not your whole
+  history.
+- Recurring Google events arrive already expanded into instances, so a rule
+  Datebook could not model still shows up correctly.
 - Writes go straight to Google and the affected calendar is re-synced right
   after, so what you see is what Google stored.
-
-## Turning it off
-
-```bash
-omarchy-shell datebook sourceRemove google:you@gmail.com   # one calendar
-bin/gcal logout                                            # forget and revoke the tokens
-```
-
-`logout` also revokes the grant at Google's end. You can double-check at
-<https://myaccount.google.com/permissions>.
+- Synced events are cached in `~/.config/datebook/cache.json` and merged only for
+  display. A sync cannot touch your local `events.json`, and a local edit cannot
+  touch Google.
 
 ## When something breaks
 
 | What you see | What it means |
 |---|---|
-| `not signed in: run gcal login` | no tokens yet, or `logout` was run |
-| `Google rejected the refresh token` | the consent screen is still in *Testing* (step 2), or access was revoked |
-| `no client credentials` | `google-client.json` missing or empty (step 3) |
-| `Google API 403` | the Calendar API is not enabled on the project (step 1) |
+| *This build has no Google client* | `google-app.json` is empty and you have no client of your own |
+| `not signed in` | no tokens yet, or DISCONNECT was pressed |
+| `Google rejected the refresh token` | the consent screen is in *Testing* (7-day tokens), or access was revoked |
+| `Google API 403` | the Calendar API is not enabled on the project |
+| *the browser never came back* | the consent tab was closed, or 5 minutes passed |
 
 `omarchy-shell datebook syncStatus` prints the last error, when the last pass
-finished and how many calendars are configured.
+finished, and how many calendars are configured.

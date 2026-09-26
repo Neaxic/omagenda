@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Write the shipped OAuth client into google-app.json.
+
+The file carries a comment block explaining why a client can live in a public
+repo at all, and hand-editing JSON around it is a good way to lose it or to
+leave a stray comma. So:
+
+  bin/set-google-client <client-id> <client-secret>
+  bin/set-google-client --from ~/Downloads/client_secret_1234.json
+  bin/set-google-client --clear
+
+The console's own download works with --from; the "installed" wrapper is
+understood. Nothing is printed but the client id, and only the tail of it.
+"""
+
+import io
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+TARGET = os.path.join(HERE, "google-app.json")
+
+
+def die(message):
+    sys.stderr.write("set-google-client: %s\n" % message)
+    raise SystemExit(1)
+
+
+def load_target():
+    try:
+        with io.open(TARGET, encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError:
+        die("%s is missing — restore it from git" % TARGET)
+    except ValueError as exc:
+        die("%s is not valid JSON (%s)" % (TARGET, exc))
+
+
+def from_console_file(path):
+    try:
+        with io.open(os.path.expanduser(path), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        die("no such file: %s" % path)
+    except ValueError as exc:
+        die("%s is not valid JSON (%s)" % (path, exc))
+    inner = data.get("installed") if isinstance(data.get("installed"), dict) else data
+    client_id = str(inner.get("client_id", "")).strip()
+    if not client_id:
+        die("no client_id in %s — is that the OAuth client download?" % path)
+    return client_id, str(inner.get("client_secret", "")).strip()
+
+
+def save(client_id, secret):
+    config = load_target()
+    config["client_id"] = client_id
+    config["client_secret"] = secret
+    # Rewritten whole rather than patched in place, so the comment block keeps
+    # its position above the two values it is explaining.
+    with io.open(TARGET, "w", encoding="utf-8") as handle:
+        json.dump(config, handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
+
+
+def main(argv):
+    if len(argv) == 2 and argv[1] == "--clear":
+        save("", "")
+        print("google-app.json cleared — this build now ships no Google client.")
+        return
+
+    if len(argv) == 3 and argv[1] == "--from":
+        client_id, secret = from_console_file(argv[2])
+    elif len(argv) == 3:
+        client_id, secret = argv[1].strip(), argv[2].strip()
+    else:
+        die("usage: set-google-client <client-id> <client-secret>\n"
+            "                          --from <console-download.json>\n"
+            "                          --clear")
+
+    if not client_id.endswith(".apps.googleusercontent.com"):
+        die("that client id looks wrong — it should end in "
+            ".apps.googleusercontent.com")
+    if not secret:
+        # Google issues one for Desktop clients even though RFC 8252 says it is
+        # not a secret. Missing it usually means a half-finished copy-paste.
+        die("no client secret given; pass '' if your client genuinely has none")
+
+    save(client_id, secret)
+    print("Wrote google-app.json  (client …%s)" % client_id[-32:])
+    print()
+    print("Check it:   bin/gcal status     # clientOrigin should be 'builtin'")
+    print("Try it:     bin/gcal connect")
+    print()
+    print("Commit it: the shipped build needs this file filled in. A client "
+          "inside a\ndesktop app is not a secret (RFC 8252 §8.5) — PKCE "
+          "is what protects the flow.")
+
+
+if __name__ == "__main__":
+    main(sys.argv)

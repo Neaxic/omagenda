@@ -2,8 +2,9 @@
 
 A calendar for the Omarchy bar, built to a mockup: a rolling grid of the week
 you are in and the two ahead, a year view, a day agenda with detail and compose
-pages, and your own events in a plain JSON file. No accounts, no network, no sync
-daemon — the store is a file you can read, edit and back up yourself.
+pages, and your own events in a plain JSON file you can read, edit and back up
+yourself. Google Calendar syncs both ways at one button press, or stays off and
+the whole thing is local — no account, no network, no sync daemon.
 
 The grid rolls rather than paging months: past weeks are gone, not greyed, so
 what you see is the days still in front of you. The furthest week sits back at
@@ -28,9 +29,9 @@ one; the year page always opens a month that way.
 │   14:00 – 15:00 · Studio 2                                  │
 │  ───────────────────────────────────────────────────────── │
 │  «  ‹            SEP – OCT 2026                     ›   »   │
-│  ┌──────────────┐ ┌───────┐                                 │
-│  │ + NEW EVENT  │ │ TODAY │                                 │
-│  └──────────────┘ └───────┘                                 │
+│  ┌──────────────┐ ┌───────┐ ┌─────────────┐                 │
+│  │ + NEW EVENT  │ │ TODAY │ │ ▣ CALENDARS │                 │
+│  └──────────────┘ └───────┘ └─────────────┘                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,7 +40,7 @@ masthead names the day and the grid has it outlined), no count line (the bands
 are the count). A day with nothing on it shows no agenda at all — the rule under
 the grid closes it and the pager follows.
 
-Four pages, all inside the one popup:
+Five pages, all inside the one popup:
 
 | Page      | Reached by                        | What it is                                        |
 |-----------|-----------------------------------|---------------------------------------------------|
@@ -47,12 +48,16 @@ Four pages, all inside the one popup:
 | `year`    | the YEAR half of the switch       | twelve miniatures, a mark per day, events brighter |
 | `detail`  | the chevron on an event           | one event's facts, with edit and delete            |
 | `compose` | NEW EVENT, or EDIT on an event    | title, date, days, time, length, place, colour, calendar, repeat |
+| `calendars` | CALENDARS, or `c`               | what is being synced, and the one Google button    |
 
 ## Where this stands
 
+Picking it back up: **[NEXT.md](NEXT.md)** is the short, ordered version of what
+is left. The rest of this section is the detail behind it.
+
 Written to a mockup over one session on **26 September 2026**, and installed:
 the plugin is enabled in the centre of the bar and everything below works on
-screen. 63 node assertions, `omarchy plugin validate` and `qmllint` clean.
+screen. 64 node assertions, `omarchy plugin validate` and `qmllint` clean.
 
 **Working, seen on screen**
 
@@ -65,25 +70,30 @@ screen. 63 node assertions, `omarchy plugin validate` and `qmllint` clean.
 **Built but never run against the real service: Google sync**
 
 The whole path exists — OAuth, token refresh, incremental pulls, write-through,
-the sources model, the CALENDAR switch in compose — and was verified end to end
-with a stubbed `bin/gcal` standing in for Google. It has **never talked to
-Google**, because that needs credentials only you can create.
+the sources model, the CALENDAR switch in compose, and a CALENDARS page whose one
+button does the lot — and was verified end to end with a stubbed `bin/gcal`
+standing in for Google. It has **never talked to Google**, because that needs a
+registered OAuth client.
 
-Picking it up is four steps, all in **[docs/google-setup.md](docs/google-setup.md)**:
+For the user there is nothing to set up: **CALENDARS → SYNC WITH GOOGLE
+CALENDAR**, allow it in the browser, and their primary calendar starts syncing.
+That works because the OAuth client ships in the plugin, at `google-app.json`.
 
-```bash
-# 1. Cloud console: new project, enable the Calendar API,
-#    publish the OAuth consent screen, make a Desktop client,
-#    write ~/.config/datebook/google-client.json      (see the doc)
-bin/gcal login                                        # 2. browser consent, once
-bin/gcal calendars                                    # 3. the ids you want
-omarchy-shell datebook sourceAdd "you@gmail.com" "Personal" sky
-omarchy-shell datebook sync true                      # 4. first full pass
-omarchy-shell datebook syncStatus                     #    and what it made of it
-```
+**That file is empty in the repo**, so the page currently says the build has no
+Google client and offers no button. Filling it in is a one-off in the Cloud
+console — and Google's verification review is the real gate, since calendar
+scopes are *sensitive*: unverified means either 7-day refresh tokens (Testing) or
+a warning screen and a user cap (Production).
 
-If step 4 reports an error, the table at the end of the setup doc maps each one
-to the step that was missed.
+**[docs/google-verification.md](docs/google-verification.md)** walks the whole
+thing, in two parts: *working* (project, desktop client,
+`bin/set-google-client`, publish — an hour) and *verified* (the `site/` pages on
+a domain you own, Search Console, a demo video, the scope justifications to
+paste — days to weeks, mostly waiting on Google).
+
+Anyone who would rather use their own Cloud project still can:
+`~/.config/datebook/google-client.json` takes precedence over the shipped one,
+and `$DATEBOOK_GOOGLE_CLIENT_ID` over both.
 
 **The store currently holds eight demo events** — Design review, Standup, Ship
 v0.2, Dinner, Sprint planning, and three runs (Berlin trip, Sprint 12, Design
@@ -99,8 +109,8 @@ rm ~/.config/datebook/events.json     # the service writes a fresh empty one
   models recurrence in ways this store does not. Local repeats are unaffected.
 - Editing a single occurrence of a repeat: edit and delete act on the series.
 - Notifications or alerts before an event.
-- An in-panel settings page; settings are the manifest schema plus
-  `~/.config/omarchy/shell.json`, and calendars are added over IPC.
+- An in-panel settings page. Calendars have one (CALENDARS), but everything else
+  is the manifest schema plus `~/.config/omarchy/shell.json`.
 - Any provider other than Google. The sources model is provider-agnostic, so an
   ICS or CalDAV source would slot in beside `kind: "google"`.
 
@@ -134,8 +144,14 @@ To take it back out: `omarchy plugin disable datebook`.
 | `EventCompose.qml`  | The new/edit form, built from `FormField` and `SegmentedToggle`          |
 | `FormField.qml`     | A labelled input closed by a rule rather than a box                      |
 | `SegmentedToggle.qml`, `OutlineButton.qml` | The two controls the design uses everywhere      |
+| `Calendars.qml`     | The calendars page: the local store, the Google calendars, the one button |
+| `CalendarRow.qml`   | One calendar: a swatch that is filled when synced, the name, its role     |
 | `bin/gcal`          | Everything Google: OAuth, token refresh, calendar and event calls        |
-| `docs/google-setup.md` | The one-off Cloud console setup                                       |
+| `bin/set-google-client` | Writes the shipped client into `google-app.json` without mangling it |
+| `google-app.json`   | The shipped OAuth client, so a user registers nothing. Empty in the repo  |
+| `site/`             | The public homepage and privacy policy Google's verification requires     |
+| `docs/google-setup.md` | Connecting Google: the button, and bringing your own client           |
+| `docs/google-verification.md` | The one-off registration and Google's review, start to finish   |
 | `tests/`            | `node --test tests/` over `Model.js`                                     |
 
 `Service.qml` is mounted once per session; the bar widgets (one per monitor)
@@ -194,9 +210,9 @@ newer in-panel edit.
 Keys while the popup has focus: arrows walk days and weeks (months on the year
 page), `Return`/`a` opens the compose form, `t` today, `n`/`p` step the grid — a
 week rolling, a month expanded, a year on the year page — `,`/`.` page a month,
-`m` expands or collapses the grid, `y` toggles the year page, `o` opens
-`events.json`. `Esc` steps back a page, or closes the popup from the
-calendar.
+`m` expands or collapses the grid, `y` toggles the year page, `c` opens the
+calendars page, `o` opens `events.json`. `Esc` steps back a page, or closes the
+popup from the calendar.
 
 ## Multi-day events
 
@@ -232,11 +248,23 @@ repeats weekly is three days *every* week.
 ## Syncing with Google Calendar
 
 Datebook talks to Google directly, two-way: your Google events appear in the
-bar, and an event created here lands in Google. Setup is a one-off five minutes
-in the Cloud console — **[docs/google-setup.md](docs/google-setup.md)** walks
-through it.
+bar, and an event created here lands in Google. For the person using it, setup is
+**CALENDARS → SYNC WITH GOOGLE CALENDAR** and a browser tab — no project, no
+keys. **[docs/google-setup.md](docs/google-setup.md)** covers both sides: the
+button, and the one-off registration behind it.
 
 The shape of it:
+
+- **One press does the whole first run.** `bin/gcal connect` takes consent if
+  there is no grant yet and returns the calendar list in the same pass, so the
+  panel runs one process rather than chaining a login to a list that might fail
+  on its own. The account's primary calendar is added and synced without being
+  picked out of a list where it is the obvious answer; the rest are rows to click.
+- **The OAuth client is the plugin's, not the user's.** First of
+  `$DATEBOOK_GOOGLE_CLIENT_ID`, then `~/.config/datebook/google-client.json`
+  (someone's own project, which wins), then the shipped `google-app.json`. With
+  none of them the page says so and offers no button, rather than a button that
+  always errors.
 
 - **Calendars are sources.** The local JSON store is one, each Google calendar
   is another, listed in `~/.config/datebook/sources.json`. A source has a name,
@@ -256,22 +284,29 @@ The shape of it:
 - **Read-only calendars** (a subscribed feed, someone else's shared calendar)
   show their events and hide EDIT and DELETE.
 
+The same thing without the mouse:
+
 ```bash
-bin/gcal login                                           # once, opens a browser
-bin/gcal calendars                                       # ids and access roles
-omarchy-shell datebook sourceAdd "you@gmail.com" "Personal" sky
+omarchy-shell datebook connect                           # consent, then the list
+omarchy-shell datebook calendarToggle "family@group.calendar.google.com"
+omarchy-shell datebook sourceColor "google:you@gmail.com" moss
 omarchy-shell datebook sync true                         # true = full, not incremental
 omarchy-shell datebook syncStatus
+omarchy-shell datebook disconnect                        # revoke, drop sources and cache
 ```
 
-Everything Google-facing is in `bin/gcal` — OAuth, token refresh, and the four
-API calls the plugin makes — written against the standard library alone, so the
+Everything Google-facing is in `bin/gcal` — OAuth, token refresh, and the API
+calls the plugin makes — written against the standard library alone, so the
 plugin stays a git clone with nothing to install. Tokens live in
-`~/.config/datebook/google-tokens.json` at `0600` and are never logged.
+`~/.config/datebook/google-tokens.json` at `0600` and are never logged. There is
+no Datebook server anywhere in the path.
 
-One caveat worth repeating from the setup guide: **publish the OAuth consent
-screen to *In production***. Left in *Testing*, Google expires refresh tokens
-after seven days and sync stops until you sign in again.
+Two caveats worth repeating from the setup guide, both about the *registration*
+rather than the code: **publish the consent screen to *In production*** (left in
+*Testing*, Google expires refresh tokens after seven days and sync stops weekly),
+and **submit it for verification**, because calendar scopes are sensitive and an
+unverified app gets both a warning screen and a cap on how many accounts may
+grant it.
 
 ## Colour
 
