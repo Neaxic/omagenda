@@ -50,6 +50,7 @@
           "next",
           "date",
           "count",
+          "clock",
           "icon"
         ],
         "defaultValue": "next"

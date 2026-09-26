@@ -616,8 +616,19 @@ test("barLabel reflects the mode it is given", () => {
   assert.equal(M.barLabel({ mode: "count", todayCount: 3, todayISO: "2026-09-26" }), "3 events")
   assert.equal(M.barLabel({ mode: "count", todayCount: 0, todayISO: "2026-09-26" }), "Clear")
   assert.equal(M.barLabel({ mode: "icon", next, todayISO: "2026-09-26" }), "")
+  assert.equal(M.barLabel({ mode: "clock", next, todayISO: "2026-09-26", nowMinutes: 14 * 60 + 32 }),
+    "Sat 26 Sep 14:32")
+  assert.equal(M.barLabel({ mode: "clock", todayISO: "2026-09-26", nowMinutes: 9, use24: false }),
+    "Sat 26 Sep 12:09am")
   // Nothing coming up falls back to the date.
   assert.equal(M.barLabel({ mode: "next", next: null, todayISO: "2026-09-26" }), "Sat 26 Sep")
+})
+
+test("clockTime wraps a stale minute instead of printing an impossible hour", () => {
+  assert.equal(M.clockTime(0), "00:00")
+  assert.equal(M.clockTime(1439), "23:59")
+  assert.equal(M.clockTime(1440), "00:00")
+  assert.equal(M.clockTime(-1), "23:59")
 })
 
 test("barLabel truncates a long title and dates a future one", () => {

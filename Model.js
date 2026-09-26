@@ -54,7 +54,7 @@ var REPEAT_LABELS = {
 }
 
 // What the bar entry shows. "next" falls back to the date when nothing is due.
-var BAR_MODES = ["next", "date", "count", "icon"]
+var BAR_MODES = ["next", "date", "count", "clock", "icon"]
 
 var BAR_ICONS = [
   { key: "calendar", glyph: "\u{F00ED}", label: "Calendar" },
@@ -1041,6 +1041,15 @@ function formatTime(time, use24) {
   return h12 + ":" + t.slice(3) + suffix
 }
 
+// "14:32" from minutes since midnight, in whichever clock shape the rest of the
+// plugin is using. The minute is wrapped rather than trusted, so a tick that
+// arrives with a stale or oversized count cannot print "25:07".
+function clockTime(nowMinutes, use24) {
+  var total = Math.round(Number(nowMinutes) || 0)
+  total = ((total % 1440) + 1440) % 1440
+  return formatTime(pad2(Math.floor(total / 60)) + ":" + pad2(total % 60), use24)
+}
+
 // When a sync last landed, for the calendars page. The wall-clock time rather
 // than "4 minutes ago": a relative age is only honest if something redraws it,
 // and this line sits on a page that may be open for a while. The date comes
@@ -1096,12 +1105,14 @@ function normalizeBarMode(value) {
 //   next  -> "14:30 Dentist" / "Tue Standup", the date when nothing is due
 //   date  -> "Mon 5 Oct"
 //   count -> "3 today"
+//   clock -> "Mon 5 Oct 14:32", a wall clock that says nothing about events
 function barLabel(options) {
   var o = options || {}
   var mode = normalizeBarMode(o.mode)
   var today = o.todayISO || todayISO()
   if (mode === "icon") return ""
   if (mode === "date") return relativeDayOrDate(today, today)
+  if (mode === "clock") return relativeDayOrDate(today, today) + " " + clockTime(o.nowMinutes, o.use24)
   if (mode === "count") {
     var n = o.todayCount || 0
     return n === 0 ? "Clear" : n + (n === 1 ? " event" : " events")
@@ -1287,6 +1298,7 @@ if (typeof module !== "undefined") {
     eventLine: eventLine,
     barIconGlyph: barIconGlyph,
     normalizeBarMode: normalizeBarMode,
+    clockTime: clockTime,
     barLabel: barLabel,
     tooltipText: tooltipText
   }

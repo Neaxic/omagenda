@@ -77,13 +77,30 @@ Item {
     if (minutes !== nowMinutes) nowMinutes = minutes
   }
 
+  // In clock mode the bar is a wall clock, so the tick has to land just after
+  // the minute turns rather than up to 20s later. Every other mode only needs
+  // the minute to be roughly right, and a plain 20s beat keeps it cheap.
+  function tickInterval() {
+    if (barMode !== "clock") return 20000
+    var now = new Date()
+    return (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 200
+  }
+
   Timer {
+    id: ticker
     interval: 20000
     repeat: true
     running: true
     triggeredOnStart: true
-    onTriggered: root.tick()
+    onTriggered: {
+      root.tick()
+      interval = root.tickInterval()
+    }
   }
+
+  // Switching into or out of clock mode re-times the beat; assigning the
+  // interval restarts the timer, which is what we want either way.
+  onBarModeChanged: ticker.interval = root.tickInterval()
 
   // --- view state -------------------------------------------------------------
   // The grid rolls: it opens on the week `anchorISO` falls in and runs forward.
@@ -285,7 +302,7 @@ Item {
 
 
   readonly property string barText: Model.barLabel({
-    mode: barMode, next: next, todayISO: todayISO,
+    mode: barMode, next: next, todayISO: todayISO, nowMinutes: nowMinutes,
     todayCount: todayEvents.length, use24: use24Hour, maxTitle: barMaxTitle
   })
 
