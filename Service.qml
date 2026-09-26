@@ -23,10 +23,32 @@ Item {
     return value === undefined || value === null ? fallback : value
   }
 
+  // The settings this widget actually declares, straight off the manifest so
+  // the list cannot drift from the schema. The IPC setter is reachable by
+  // anything on the user's Quickshell bus, and an unchecked key would write
+  // arbitrary JSON into their shell.json entry.
+  readonly property var knownSettings: {
+    var out = []
+    var schema = manifest && manifest.barWidget ? manifest.barWidget.schema : null
+    if (schema)
+      for (var i = 0; i < schema.length; i++)
+        if (schema[i] && schema[i].key) out.push(String(schema[i].key))
+    return out
+  }
+
+  function isKnownSetting(key) {
+    // No manifest (a bare qmllint run, say) means nothing to check against;
+    // refusing everything would be worse than the bar simply not offering IPC.
+    return knownSettings.length === 0 || knownSettings.indexOf(String(key)) !== -1
+  }
+
   function persistSettings(values) {
     var entry = { id: "datebook" }
     for (var key in settings) if (key !== "id") entry[key] = settings[key]
-    for (var name in values) entry[name] = values[name]
+    // `id` is the bar's handle on this widget, not a setting. It is skipped on
+    // the way in above, so skip it here too — otherwise the last writer wins
+    // and a caller could rename the entry out from under the bar.
+    for (var name in values) if (name !== "id") entry[name] = values[name]
     settings = entry
     if (shell && typeof shell.updateEntryInline === "function") shell.updateEntryInline("datebook", entry)
   }
@@ -1089,6 +1111,8 @@ Item {
 
     function setOption(key: string, value: string): string {
       if (key === "") return "expected a key"
+      if (!root.isKnownSetting(key))
+        return "unknown setting: " + key + " (known: " + root.knownSettings.join(", ") + ")"
       var parsed = value
       if (value === "true") parsed = true
       else if (value === "false") parsed = false
