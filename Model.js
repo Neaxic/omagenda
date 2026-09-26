@@ -363,18 +363,94 @@ function yearMonths(year, options) {
   return months
 }
 
-// How far through the year `todayIso` stands, as 0..1. A year already over
-// reads 1, one not yet begun reads 0, so the meter is honest while browsing.
-function yearProgress(year, todayIso) {
-  var today = fromISO(todayIso || todayISO())
-  if (!today) return 0
-  if (today.getFullYear() > year) return 1
-  if (today.getFullYear() < year) return 0
-  var startOfYear = new Date(year, 0, 1)
-  var days = Math.round((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
-                       - Date.UTC(year, 0, 1)) / 86400000)
-  var total = (new Date(year, 11, 31).getTime() - startOfYear.getTime()) / 86400000 + 1
-  return Math.max(0, Math.min(1, days / total))
+// The Monday (or Sunday) that opens the week `iso` falls in.
+function startOfWeek(iso, mondayFirst) {
+  var date = fromISO(iso)
+  if (!date) return iso
+  var dow = date.getDay()
+  var back = mondayFirst !== false ? (dow + 6) % 7 : dow
+  return shiftISO(iso, -back)
+}
+
+// The rolling grid: `count` weeks running forward from the week `startISO`
+// opens. Same row shape as monthWeeks() — { week, days: [cell x7] } — so the
+// grid delegate does not care which of the two built it. `inMonth` is measured
+// against the month the window starts in, which is what dims the days that have
+// rolled over into the next one.
+function weeksFrom(startISO, count, options) {
+  var o = options || {}
+  var mondayFirst = o.mondayFirst !== false
+  var today = o.todayISO || todayISO()
+  var marks = o.marks || {}
+  var total = Math.max(1, Math.min(12, Math.round(count || 3)))
+
+  var first = startOfWeek(startISO, mondayFirst)
+  var anchorDate = fromISO(o.monthOf || first)
+  var anchorMonth = anchorDate ? anchorDate.getMonth() : -1
+  var anchorYear = anchorDate ? anchorDate.getFullYear() : -1
+
+  var weeks = []
+  for (var w = 0; w < total; w++) {
+    var days = []
+    for (var d = 0; d < 7; d++) {
+      var iso = shiftISO(first, w * 7 + d)
+      var date = fromISO(iso)
+      if (!date) continue
+      var dow = date.getDay()
+      var mark = marks[iso]
+      days.push({
+        iso: iso,
+        day: date.getDate(),
+        inMonth: date.getMonth() === anchorMonth && date.getFullYear() === anchorYear,
+        today: iso === today,
+        weekend: dow === 0 || dow === 6,
+        count: mark ? mark.count : 0,
+        colors: mark ? mark.colors : []
+      })
+    }
+    var weekStart = shiftISO(first, w * 7)
+    weeks.push({
+      week: isoWeek(fromISO(weekStart)),
+      start: weekStart,
+      days: days,
+      segments: o.events ? weekSegments(o.events, weekStart) : []
+    })
+  }
+  return weeks
+}
+
+// What the pager under a rolling window says: one month when the window sits
+// inside one, otherwise the two it spans.
+function windowLabel(startISO, endISO) {
+  var from = fromISO(startISO), to = fromISO(endISO)
+  if (!from) return ""
+  if (!to) return upperMonth(from.getFullYear(), from.getMonth())
+  if (from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth())
+    return upperMonth(from.getFullYear(), from.getMonth())
+  var left = MONTH_SHORT[from.getMonth()].toUpperCase()
+  var right = MONTH_SHORT[to.getMonth()].toUpperCase()
+  if (from.getFullYear() !== to.getFullYear())
+    return left + " " + from.getFullYear() + " – " + right + " " + to.getFullYear()
+  return left + " – " + right + " " + to.getFullYear()
+}
+
+// The year view: twelve months, each with its own weeks, for the mini grids.
+function yearMonths(year, options) {
+  var months = []
+  for (var m = 0; m < 12; m++) {
+    months.push({
+      month: m,
+      name: MONTH_NAMES[m],
+      short: MONTH_SHORT[m],
+      weeks: monthWeeks(year, m, {
+        mondayFirst: (options || {}).mondayFirst !== false,
+        showAdjacentMonths: false,
+        todayISO: (options || {}).todayISO,
+        marks: (options || {}).marks || {}
+      })
+    })
+  }
+  return months
 }
 
 // The theme's colors.toml, as { token: "#rrggbb" }.
@@ -954,11 +1030,6 @@ function countLabel(n) {
   return count + (count === 1 ? " event" : " events")
 }
 
-// Percent, for the year meter's label.
-function percentLabel(fraction) {
-  return Math.round(Math.max(0, Math.min(1, Number(fraction) || 0)) * 100) + "%"
-}
-
 // The headline face: the first of `preferred` that is actually installed, else
 // the theme's family. Qt.fontFamilies() is passed in so this stays pure.
 function pickFamily(available, preferred, fallback) {
@@ -1009,7 +1080,6 @@ if (typeof module !== "undefined") {
     weeksFrom: weeksFrom,
     windowLabel: windowLabel,
     yearMonths: yearMonths,
-    yearProgress: yearProgress,
     normalizeTime: normalizeTime,
     minutesOfDay: minutesOfDay,
     normalizeRepeat: normalizeRepeat,
@@ -1044,7 +1114,6 @@ if (typeof module !== "undefined") {
     dayHeading: dayHeading,
     upperMonth: upperMonth,
     countLabel: countLabel,
-    percentLabel: percentLabel,
     pickFamily: pickFamily,
     relativeDay: relativeDay,
     relativeDayOrDate: relativeDayOrDate,

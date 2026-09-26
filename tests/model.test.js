@@ -185,14 +185,6 @@ test("yearMonths returns twelve self-contained months", () => {
   assert.equal(stray.length, 0)
 })
 
-test("yearProgress tracks the year and clamps outside it", () => {
-  assert.equal(M.percentLabel(M.yearProgress(2026, "2026-09-26")), "73%")
-  assert.equal(M.yearProgress(2026, "2026-01-01"), 0)
-  assert.equal(M.percentLabel(M.yearProgress(2026, "2026-12-31")), "100%")
-  assert.equal(M.yearProgress(2027, "2026-09-26"), 0)
-  assert.equal(M.yearProgress(2025, "2026-09-26"), 1)
-})
-
 test("weekdayLabels rotates for a Monday start", () => {
   assert.deepEqual(M.weekdayLabels(true), ["M", "T", "W", "T", "F", "S", "S"])
   assert.deepEqual(M.weekdayLabels(false), ["S", "M", "T", "W", "T", "F", "S"])

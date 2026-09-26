@@ -12,8 +12,7 @@ one; the year page always opens a month that way.
 
 ```
 ┌─ Datebook ─────────────────────────────────────────────────┐
-│  ▣  September 26             2026 ────────────────── 73%   │
-│                                   ┌───────┬───────┬──────┐ │
+│  ▣  September 26                  ┌───────┬───────┬──────┐ │
 │                                   │ WEEKS │ MONTH │ YEAR │ │
 │         MO    TU    WE    TH    FR    SA    SU    └──────┘ │
 │  ───────────────────────────────────────────────────────── │
@@ -68,7 +67,7 @@ omarchy restart shell
 | `Service.qml`       | The one shared instance: event file, today's clock, view state, IPC target |
 | `Chrome.qml`        | The design tokens — every ink level is the theme foreground at a fixed alpha |
 | `Panel.qml`         | Bar widget plus popup: masthead, page routing, keyboard                  |
-| `CalendarHeader.qml`| The masthead: glyph slab, month set large, year meter, the view switch   |
+| `CalendarHeader.qml`| The masthead: glyph slab, month set large, the view switch               |
 | `MonthGrid.qml`     | The month grid: week gutter, hairlines, day numbers, dots                |
 | `YearGrid.qml`      | The year page's twelve miniatures                                        |
 | `EventCard.qml`     | One event band: title, time and place, chevron                           |
@@ -266,8 +265,8 @@ omarchy-shell datebook path
 - The **WEEKS / YEAR switch sits under the year meter**, not in the weekday row.
   In the mockup it shares that row with the weekday letters, which pushes them
   off the columns they head; with the switch moved, they line up.
-- The **year meter is a meter**: a dim track with the elapsed part lit. The
-  mockup draws it fully lit at 73%.
+- The mockup's **year meter is gone** — it measured the calendar year, not
+  anything the calendar was being asked about.
 - The **masthead runs smaller** than the mockup's 46px, which reads outsized on
   a bar popup.
 - **Sunday-first** in the mockup; this defaults to Monday-first

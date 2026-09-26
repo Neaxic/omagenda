@@ -1,10 +1,8 @@
 import QtQuick
 import qs.Commons
-import "Model.js" as Model
 
-// The mockup's masthead: a filled glyph slab, the month set huge with the
-// selected day trailing it in a quieter weight, and a year meter on the right
-// showing how much of the year has gone.
+// The masthead: a filled glyph slab, the month set huge with the selected day
+// trailing it in a quieter weight, and the view switch on the right.
 Item {
   id: root
 
@@ -89,61 +87,16 @@ Item {
     }
   }
 
-  // --- year meter and the view switch --------------------------------------------
-  Column {
+  // --- the view switch ------------------------------------------------------------
+  Item {
     id: rightStack
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
-    spacing: Style.space(10)
-
-  Row {
-    anchors.right: parent.right
-    spacing: Style.space(10)
-
-    Text {
-      anchors.verticalCenter: parent.verticalCenter
-      text: String(root.year)
-      color: root.chrome ? root.chrome.dim : "transparent"
-      font.family: root.chrome ? root.chrome.fontFamily : "monospace"
-      font.pixelSize: root.chrome ? root.chrome.labelSize : 10
-      font.letterSpacing: root.chrome ? root.chrome.trackedSpacing : 1
-    }
-
-    Item {
-      width: Style.space(128)
-      height: Style.space(12)
-      anchors.verticalCenter: parent.verticalCenter
-
-      Rectangle {
-        anchors.verticalCenter: parent.verticalCenter
-        width: parent.width
-        height: Math.max(1, Style.space(2))
-        color: root.chrome ? root.chrome.hairline : "transparent"
-      }
-
-      Rectangle {
-        anchors.verticalCenter: parent.verticalCenter
-        width: parent.width * Math.max(0, Math.min(1, root.progress))
-        height: Math.max(1, Style.space(2))
-        color: root.chrome ? root.chrome.meter : "transparent"
-
-        Behavior on width {
-          NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-        }
-      }
-    }
-
-    Text {
-      anchors.verticalCenter: parent.verticalCenter
-      text: Model.percentLabel(root.progress)
-      color: root.chrome ? root.chrome.dim : "transparent"
-      font.family: root.chrome ? root.chrome.fontFamily : "monospace"
-      font.pixelSize: root.chrome ? root.chrome.labelSize : 10
-      font.letterSpacing: root.chrome ? root.chrome.trackedSpacing : 1
-    }
-  }
+    implicitWidth: switchLoader.width
+    implicitHeight: switchLoader.height
 
     Loader {
+      id: switchLoader
       anchors.right: parent.right
       sourceComponent: root.trailingControl
     }

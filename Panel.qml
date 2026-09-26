@@ -80,7 +80,6 @@ Panel {
   readonly property bool use24Hour: book ? book.use24Hour : true
   readonly property bool weekStartsMonday: book ? book.weekStartsMonday : true
   readonly property bool showWeekNumbers: book ? book.showWeekNumbers : true
-  readonly property real yearProgress: book ? book.yearProgress : 0
   readonly property string barText: book ? book.barText : ""
   readonly property string barGlyph: Model.barIconGlyph(setting("barIcon", "calendar"))
 
@@ -248,8 +247,6 @@ Panel {
           chrome: tokens
           title: root.page === "year" ? String(root.viewYear) : Model.MONTH_NAMES[root.viewMonth]
           trailing: root.page === "year" ? "" : String(root.selectedDay)
-          year: root.viewYear
-          progress: root.yearProgress
           onSlabClicked: root.goToday()
           trailingControl: Component {
             SegmentedToggle {

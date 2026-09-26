@@ -218,8 +218,6 @@ Item {
     marks: yearMarks
   })
 
-  // How much of the year on screen has gone, for the masthead meter.
-  readonly property real yearProgress: Model.yearProgress(viewYear, todayISO)
 
   readonly property string barText: Model.barLabel({
     mode: barMode, next: next, todayISO: todayISO,
