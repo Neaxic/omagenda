@@ -87,9 +87,9 @@ a warning screen and a user cap (Production).
 
 **[docs/google-verification.md](docs/google-verification.md)** walks the whole
 thing, in two parts: *working* (project, desktop client,
-`bin/set-google-client`, publish — an hour) and *verified* (the `site/` pages on
-a domain you own, Search Console, a demo video, the scope justifications to
-paste — days to weeks, mostly waiting on Google).
+`bin/set-google-client`, publish — an hour) and *verified* (the public site at
+[gaard.dev](https://gaard.dev), Search Console, a demo video, the scope
+justifications to paste — days to weeks, mostly waiting on Google).
 
 Anyone who would rather use their own Cloud project still can:
 `~/.config/datebook/google-client.json` takes precedence over the shipped one,
@@ -149,7 +149,6 @@ To take it back out: `omarchy plugin disable datebook`.
 | `bin/gcal`          | Everything Google: OAuth, token refresh, calendar and event calls        |
 | `bin/set-google-client` | Writes the shipped client into `google-app.json` without mangling it |
 | `google-app.json`   | The shipped OAuth client, so a user registers nothing. Empty in the repo  |
-| `site/`             | The public homepage and privacy policy Google's verification requires     |
 | `docs/google-setup.md` | Connecting Google: the button, and bringing your own client           |
 | `docs/google-verification.md` | The one-off registration and Google's review, start to finish   |
 | `tests/`            | `node --test tests/` over `Model.js`                                     |
@@ -355,7 +354,7 @@ schema describes:
 
 | Key                  | Default    | Meaning                                        |
 |----------------------|------------|------------------------------------------------|
-| `barMode`            | `next`     | `next` (next event), `date`, `count`, `icon`   |
+| `barMode`            | `next`     | `next` (next event), `date`, `count`, `clock` (day, date and time), `icon` |
 | `barIcon`            | `calendar` | `calendar`, `month`, `today`, `blank`, `clock`, `none` |
 | `barMaxTitle`        | `18`       | Longest event title in the bar                 |
 | `displayFont`        | `auto`     | Headline face: `auto` picks an installed grotesque, `theme` keeps the bar's font, or name a family |
@@ -434,4 +433,5 @@ the popup first opens, so errors in there surface on the first toggle.
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE). The terms the plugin is published under, including
+the warranty and liability disclaimers, are at <https://gaard.dev/terms/>.

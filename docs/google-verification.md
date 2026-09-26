@@ -84,17 +84,21 @@ it in the README. Everything below removes it.
 
 ## Part 2 — Verified
 
-### 2.1 Register the domain and put the site up
+### 2.1 The site
 
-The site is already written — `site/` in this repo, two pages and a stylesheet.
+**Done.** The domain is **gaard.dev** and the site lives in its own repository,
+[Neaxic/gaard.dev](https://github.com/Neaxic/gaard.dev) — static HTML, no build step,
+serve the directory as the site root.
 
-```bash
-cd site
-./configure <your-domain> <your-contact-email>
-```
+| Page | URL |
+|---|---|
+| Homepage | <https://gaard.dev/> |
+| Privacy policy | <https://gaard.dev/privacy/> |
+| Terms of service | <https://gaard.dev/terms/> |
 
-Deploy it so `https://<domain>/` and `https://<domain>/privacy/` both load. See
-`site/README.md`.
+It used to live in `site/` here; that folder is gone, because the policy has to be
+served from the domain and keeping a second copy alongside the plugin only invited the
+two to drift.
 
 Requirements this satisfies, all of which are checked:
 
@@ -102,6 +106,9 @@ Requirements this satisfies, all of which are checked:
 - the privacy policy is on the **same domain** as the homepage
 - the policy names each scope and says what happens to the data
 - the policy carries the **Limited Use** disclosure
+
+All four are satisfied by the pages as written. Do not strip the per-scope tables or
+the Limited Use paragraph from them.
 
 Do not point the homepage at a GitHub repo or an app-store listing. Reviewers reject
 that; it has to be a site about the app.
@@ -123,10 +130,10 @@ This is the step people forget, and the submission bounces without it.
 |---|---|
 | App name | `Datebook` — must match the site and the video |
 | App logo | square PNG, 120×120 or larger, no rounded corners baked in |
-| Application home page | `https://<domain>/` |
-| Application privacy policy link | `https://<domain>/privacy/` |
-| Application terms of service | optional; leave blank unless you write one |
-| Authorized domains | `<domain>` — bare, no `https://`, no path |
+| Application home page | `https://gaard.dev/` |
+| Application privacy policy link | `https://gaard.dev/privacy/` |
+| Application terms of service | `https://gaard.dev/terms/` |
+| Authorized domains | `gaard.dev` — bare, no `https://`, no path |
 
 ### 2.4 Declare the scopes
 
@@ -217,10 +224,11 @@ is common and does not mean anything is wrong.
 - [ ] `bin/set-google-client` run; `bin/gcal status` says `clientOrigin: builtin`
 - [ ] `bin/gcal connect` works end to end against real Google
 - [ ] App published to **In production**
-- [ ] Domain registered, `site/` configured and deployed
-- [ ] Homepage and `/privacy/` both load over HTTPS
+- [x] Domain registered (`gaard.dev`) and the site written
+- [ ] `gaard.dev/`, `/privacy/` and `/terms/` all load over HTTPS
 - [ ] Domain verified in Search Console, same Google account as the project
-- [ ] Branding filled in: name, logo, homepage, privacy link, authorized domain
+- [ ] Branding filled in: name, logo, homepage, privacy link, terms link,
+      authorized domain
 - [ ] Exactly the two scopes declared
 - [ ] Demo video recorded and uploaded unlisted
 - [ ] Justifications pasted, submitted

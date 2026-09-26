@@ -39,21 +39,19 @@ recording of it.
 At this point it works for anyone, behind Google's "hasn't verified this app" screen.
 Shippable if you are willing to document that.
 
-### 2. Buy the domain
+### 2. The domain — done
 
-You chose a new domain over `javel.dk` and `neaxic.github.io`. Nothing else in step 3
-can start until it exists.
+The domain is **gaard.dev**, and the site is written and lives in its own repository,
+[Neaxic/gaard.dev](https://github.com/Neaxic/gaard.dev): homepage, privacy policy and
+terms of service, static, no build step. `site/` is gone from this repo.
 
-- [ ] Register it
-- [ ] `cd site && ./configure <domain> <contact-email>`
-- [ ] Deploy `site/` so `https://<domain>/` and `https://<domain>/privacy/` both load
-      (see `site/README.md` — static, no build step)
+- [x] Domain registered
+- [x] Homepage, privacy policy and terms written, contact address filled in
+- [ ] Deploy it so `gaard.dev/`, `/privacy/` and `/terms/` all load over HTTPS
 
 ### 3. Two things only you can make
 
 - [ ] **A logo.** Square PNG, 120×120 or larger, for the consent screen. Not written.
-- [ ] **Decide the public contact address.** The site currently has the literal
-      placeholder `CONTACT_EMAIL`; `site/configure` replaces it.
 
 ### 4. Submit for verification
 
@@ -62,7 +60,7 @@ Full walkthrough with the exact field values and the text to paste:
 
 - [ ] Verify the domain in **Search Console**, using the same Google account that owns
       the Cloud project. This is the step people forget and submissions bounce on
-- [ ] Branding: name, logo, homepage, privacy link, authorized domain
+- [ ] Branding: name, logo, homepage, privacy link, terms link, authorized domain
 - [ ] Data Access: exactly the two scopes, nothing more
 - [ ] **Record the demo video**, unlisted on YouTube. The part most first submissions
       fail is showing each scope *being used* — not just the sign-in. Shot list is in
