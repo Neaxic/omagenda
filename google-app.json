@@ -16,6 +16,6 @@
     "instead of half-working. A user can still put their own client in",
     "~/.config/datebook/google-client.json, which takes precedence over this."
   ],
-  "client_id": "",
-  "client_secret": ""
+  "client_id": "879115216689-bg1g66g2bl7b164h0clco5ebsik3h6e1.apps.googleusercontent.com",
+  "client_secret": "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"
 }
