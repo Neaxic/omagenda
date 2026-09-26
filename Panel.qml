@@ -93,6 +93,42 @@ Panel {
     var source = book.sourceById(id)
     return source ? String(source.name) : ""
   }
+
+  // The calendars page's rows: every calendar the Google account has, marked with
+  // whether Datebook syncs it and in what colour. The list itself is not
+  // persisted, so after a shell restart it is empty until the page asks Google
+  // again — the calendars already added are appended so the page is never blank
+  // about work the user has done.
+  readonly property var calendarRows: {
+    var out = []
+    if (!book) return out
+    var seen = {}
+    var list = book.calendarList || []
+    var i
+    for (i = 0; i < list.length; i++) {
+      var entry = list[i]
+      var source = book.sourceForCalendar(entry.id)
+      seen[String(entry.id)] = true
+      out.push({
+        id: String(entry.id),
+        name: String(entry.name || entry.id),
+        writable: entry.writable !== false,
+        primary: entry.primary === true,
+        added: source !== null && source !== undefined,
+        color: source ? String(source.color) : "none"
+      })
+    }
+    for (i = 0; i < book.sources.length; i++) {
+      var known = book.sources[i]
+      if (known.kind !== "google" || seen[String(known.calendarId)]) continue
+      out.push({
+        id: String(known.calendarId), name: String(known.name),
+        writable: known.writable !== false, primary: false,
+        added: true, color: String(known.color)
+      })
+    }
+    return out
+  }
   readonly property var yearMonths: book ? book.yearMonths : []
   readonly property var dayEvents: book ? book.selectedEvents : []
   readonly property int todayCount: book ? book.todayEvents.length : 0
@@ -130,6 +166,8 @@ Panel {
   function showPage(name, id) { if (book) book.showPage(name, id || "") }
 
   function openDetail(id) { showPage("detail", id) }
+
+  function showCalendars() { showPage("calendars", "") }
 
   function startCompose(id) {
     composeError = ""
@@ -252,6 +290,7 @@ Panel {
         else if (key === "<" || key === ",") root.stepMonth(-1)
         else if (key === "y") root.showPage(root.page === "year" ? "month" : "year", "")
         else if (key === "a") root.startCompose("")
+        else if (key === "c") root.showCalendars()
         else if (key === "o") root.openFile()
       }
 
@@ -339,6 +378,7 @@ Panel {
             if (root.page === "year") return yearPage
             if (root.page === "detail") return detailPage
             if (root.page === "compose") return composePage
+            if (root.page === "calendars") return calendarsPage
             return monthPage
           }
         }
@@ -496,6 +536,13 @@ Panel {
           label: "TODAY"
           onClicked: root.goToday()
         }
+
+        OutlineButton {
+          chrome: tokens
+          glyph: "\u{F00ED}"                       // calendar-multiple
+          label: "CALENDARS"
+          onClicked: root.showCalendars()
+        }
       }
     }
   }
@@ -613,6 +660,32 @@ Panel {
         focusTitle()
       }
       Component.onDestruction: root.textFocus = false
+    }
+  }
+
+  // --- the calendars page -----------------------------------------------------------
+  Component {
+    id: calendarsPage
+
+    Calendars {
+      chrome: tokens
+      rows: root.calendarRows
+      localColor: root.book ? String(root.book.localSource.color) : "none"
+      available: root.book ? root.book.googleAvailable : false
+      connected: root.book ? root.book.googleConnected : false
+      connecting: root.book ? root.book.connecting : false
+      syncing: root.book ? root.book.syncing : false
+      clientOrigin: root.book ? root.book.googleClientOrigin : ""
+      error: root.book ? (root.book.googleError !== "" ? root.book.googleError : root.book.syncError) : ""
+      lastSynced: root.book ? root.book.lastSynced : 0
+      todayISO: root.todayISO
+      use24Hour: root.use24Hour
+      onConnectRequested: if (root.book) root.book.connectGoogle()
+      onCancelRequested: if (root.book) root.book.cancelConnect()
+      onDisconnectRequested: if (root.book) root.book.disconnectGoogle()
+      onSyncRequested: if (root.book) root.book.syncAll(false)
+      onToggled: function(calendarId) { if (root.book) root.book.toggleCalendar(calendarId) }
+      onClosed: root.backFromPage()
     }
   }
 }

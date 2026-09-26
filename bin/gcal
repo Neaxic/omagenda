@@ -8,6 +8,7 @@ vendored SDK — so the plugin stays a git clone with nothing to install.
 Output is always JSON on stdout. Failures print {"error": ...} and exit non-zero,
 so the QML side can surface the message instead of guessing from an exit code.
 
+  gcal connect                   login, then the calendar list, in one pass
   gcal login                     browser consent, once
   gcal status                    is there a usable token, and for what
   gcal logout                    forget the tokens (the Google grant survives)
@@ -17,9 +18,20 @@ so the QML side can surface the message instead of guessing from an exit code.
   gcal patch  <calId> <id> <json>
   gcal delete <calId> <id>
 
-Credentials live in ~/.config/datebook/google-client.json (yours, from the
-Cloud console) and tokens in ~/.config/datebook/google-tokens.json, both 0600.
-Neither is ever printed.
+The OAuth client comes from the first of these that has a client_id:
+
+  1. $DATEBOOK_GOOGLE_CLIENT_ID / $DATEBOOK_GOOGLE_CLIENT_SECRET
+  2. ~/.config/datebook/google-client.json   — the user's own, if they want one
+  3. <plugin>/google-app.json                — Datebook's own, shipped
+
+(3) is why a user only has to press a button: the app registration is the
+plugin's, not theirs. A client shipped inside a desktop app is not a secret and
+is not treated as one (RFC 8252 §8.5); PKCE is what actually protects the
+exchange. (2) exists for anyone who would rather answer to their own Cloud
+project — it wins over the shipped one.
+
+Tokens live in ~/.config/datebook/google-tokens.json at 0600 and are never
+printed.
 """
 
 import base64
@@ -40,6 +52,11 @@ import urllib.request
 CONFIG_DIR = os.path.expanduser("~/.config/datebook")
 CLIENT_FILE = os.path.join(CONFIG_DIR, "google-client.json")
 TOKEN_FILE = os.path.join(CONFIG_DIR, "google-tokens.json")
+
+# bin/gcal -> the plugin root beside it, so the shipped client is found however
+# the plugin was cloned or symlinked.
+PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+APP_CLIENT_FILE = os.path.join(PLUGIN_DIR, "google-app.json")
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -87,20 +104,41 @@ def write_private(path, data):
     os.replace(tmp, path)
 
 
-def client_credentials():
-    config = read_json(CLIENT_FILE)
-    if not config:
-        die("no client credentials: see docs/google-setup.md, then write "
-            + CLIENT_FILE, code=2, needs="client")
-    client_id = str(config.get("client_id", "")).strip()
-    secret = str(config.get("client_secret", "")).strip()
+def client_from_file(path):
+    """(client_id, client_secret) out of a console-style JSON file, or None."""
+    config = read_json(path)
+    if not isinstance(config, dict):
+        return None
     # A file straight out of the console has everything under "installed".
-    if not client_id and isinstance(config.get("installed"), dict):
-        client_id = str(config["installed"].get("client_id", "")).strip()
-        secret = str(config["installed"].get("client_secret", "")).strip()
+    inner = config.get("installed") if isinstance(config.get("installed"), dict) else config
+    client_id = str(inner.get("client_id", "")).strip()
     if not client_id:
-        die("client_id missing from " + CLIENT_FILE, code=2, needs="client")
-    return client_id, secret
+        return None
+    return client_id, str(inner.get("client_secret", "")).strip()
+
+
+def resolve_client():
+    """The OAuth client to use, and where it came from. (None, "") if unset."""
+    env_id = os.environ.get("DATEBOOK_GOOGLE_CLIENT_ID", "").strip()
+    if env_id:
+        return (env_id, os.environ.get("DATEBOOK_GOOGLE_CLIENT_SECRET", "").strip()), "env"
+    # The user's own client outranks the shipped one: if they went to the
+    # trouble of registering a project, that is the one they meant.
+    found = client_from_file(CLIENT_FILE)
+    if found:
+        return found, "user"
+    found = client_from_file(APP_CLIENT_FILE)
+    if found:
+        return found, "builtin"
+    return None, ""
+
+
+def client_credentials():
+    client, _origin = resolve_client()
+    if not client:
+        die("this copy of Datebook ships no Google client, and you have not set "
+            "one up. See docs/google-setup.md.", code=2, needs="client")
+    return client
 
 
 def post_form(url, fields):
@@ -154,7 +192,12 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def login():
+def have_tokens():
+    tokens = read_json(TOKEN_FILE)
+    return bool(tokens and tokens.get("refresh_token"))
+
+
+def do_login():
     client_id, client_secret = client_credentials()
     verifier, challenge = pkce_pair()
     state = secrets.token_urlsafe(24)
@@ -179,6 +222,11 @@ def login():
 
         sys.stderr.write("Opening your browser to authorise Datebook…\n")
         sys.stderr.write("If nothing opens, paste this into a browser:\n\n%s\n\n" % url)
+        # Until Google has finished verifying the app registration, consent is
+        # fronted by a scare screen. Saying so up front beats the user deciding
+        # the plugin is malware halfway through.
+        sys.stderr.write("If Google says it has not verified Datebook, choose "
+                         "Advanced → Go to Datebook.\n")
         try:
             subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
@@ -212,8 +260,12 @@ def login():
     if "refresh_token" not in payload:
         die("Google returned no refresh token; revoke the app's access and try again", code=4)
 
-    save_tokens(payload)
-    emit({"ok": True, "scopes": payload.get("scope", "").split()})
+    return save_tokens(payload)
+
+
+def login():
+    tokens = do_login()
+    emit({"ok": True, "scopes": tokens.get("scope", "").split()})
 
 
 def save_tokens(payload, keep_refresh=None):
@@ -285,7 +337,7 @@ def api(path, method="GET", params=None, body=None):
         die("network error talking to Google: %s" % exc.reason, code=3)
 
 
-def calendars():
+def calendar_list():
     out, page = [], None
     while True:
         payload = api("/users/me/calendarList",
@@ -304,7 +356,31 @@ def calendars():
         page = payload.get("nextPageToken")
         if not page:
             break
-    emit({"calendars": out})
+    return out
+
+
+def calendars():
+    emit({"calendars": calendar_list()})
+
+
+def connect():
+    """The one-press path: consent if needed, then say what there is to sync.
+
+    Kept as a single command so the panel can run one process and get both
+    halves of the answer, rather than chaining two and handling a login that
+    succeeded followed by a list that failed.
+    """
+    fresh = False
+    if not have_tokens():
+        do_login()
+        fresh = True
+    found = calendar_list()
+    primary = ""
+    for item in found:
+        if item.get("primary"):
+            primary = item.get("id") or ""
+            break
+    emit({"ok": True, "fresh": fresh, "calendars": found, "primary": primary})
 
 
 def events(calendar_id, sync_token=None, time_min=None, time_max=None):
@@ -344,8 +420,11 @@ def events(calendar_id, sync_token=None, time_min=None, time_max=None):
 
 def main(argv):
     if len(argv) < 2:
-        die("usage: gcal login|status|logout|calendars|events|insert|patch|delete")
+        die("usage: gcal connect|login|status|logout|calendars|events|insert|patch|delete")
     command = argv[1]
+
+    if command == "connect":
+        return connect()
 
     if command == "login":
         return login()
@@ -362,9 +441,12 @@ def main(argv):
 
     if command == "status":
         tokens = read_json(TOKEN_FILE)
-        client = read_json(CLIENT_FILE)
+        client, origin = resolve_client()
         return emit({
             "client": bool(client),
+            # env | user | builtin — the panel says "your own Google project"
+            # rather than "connected" when someone brought their own.
+            "clientOrigin": origin,
             "authorized": bool(tokens and tokens.get("refresh_token")),
             "scopes": (tokens or {}).get("scope", "").split(),
             "expiresIn": max(0, int((tokens or {}).get("expires_at", 0) - time.time())),

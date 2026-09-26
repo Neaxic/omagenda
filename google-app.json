@@ -1,0 +1,21 @@
+{
+  "_comment": [
+    "Datebook's own Google OAuth client — the reason a user only has to press",
+    "SYNC WITH GOOGLE CALENDAR instead of registering a Cloud project.",
+    "",
+    "Fill client_id and client_secret in once, from a Desktop app OAuth client in",
+    "the Datebook Cloud project, and commit them. See docs/google-setup.md for",
+    "the console steps and the verification Google requires before strangers can",
+    "use it without a warning screen.",
+    "",
+    "A client shipped inside a desktop app is not a secret: anyone can read it",
+    "out of the package, which RFC 8252 s8.5 says to expect. PKCE, not this",
+    "string, is what stops a stolen authorization code being redeemed.",
+    "",
+    "Left empty, Datebook simply has no Google integration, and bin/gcal says so",
+    "instead of half-working. A user can still put their own client in",
+    "~/.config/datebook/google-client.json, which takes precedence over this."
+  ],
+  "client_id": "",
+  "client_secret": ""
+}

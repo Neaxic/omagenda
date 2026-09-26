@@ -1041,6 +1041,20 @@ function formatTime(time, use24) {
   return h12 + ":" + t.slice(3) + suffix
 }
 
+// When a sync last landed, for the calendars page. The wall-clock time rather
+// than "4 minutes ago": a relative age is only honest if something redraws it,
+// and this line sits on a page that may be open for a while. The date comes
+// along only once the sync is no longer today's.
+function syncedLabel(ms, todayIso, use24) {
+  var stamp = Number(ms)
+  if (!isFinite(stamp) || stamp <= 0) return ""
+  var when = new Date(stamp)
+  if (isNaN(when.getTime())) return ""
+  var clock = formatTime(pad2(when.getHours()) + ":" + pad2(when.getMinutes()), use24)
+  if (toISO(when) === todayIso) return clock
+  return when.getDate() + " " + MONTH_SHORT[when.getMonth()] + " " + clock
+}
+
 // "Today", "Tomorrow", "Yesterday", else "Mon 5 Oct" (with the year when it is
 // not the year we are standing in).
 function relativeDay(iso, todayIso) {
@@ -1259,6 +1273,7 @@ if (typeof module !== "undefined") {
     nextOccurrence: nextOccurrence,
     parseAddInput: parseAddInput,
     formatTime: formatTime,
+    syncedLabel: syncedLabel,
     endTime: endTime,
     timeRange: timeRange,
     spanLabel: spanLabel,

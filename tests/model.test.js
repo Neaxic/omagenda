@@ -590,6 +590,17 @@ test("formatTime honours the 12-hour setting", () => {
   assert.equal(M.formatTime("", false), "")
 })
 
+test("syncedLabel drops the date for today and keeps it otherwise", () => {
+  const today = new Date(2026, 8, 26, 14, 32).getTime()
+  assert.equal(M.syncedLabel(today, "2026-09-26", true), "14:32")
+  assert.equal(M.syncedLabel(today, "2026-09-26", false), "2:32pm")
+  // Yesterday's pass has to say so, or "14:32" reads as an hour ago.
+  assert.equal(M.syncedLabel(today, "2026-09-27", true), "26 Sep 14:32")
+  // Never synced, and junk, both come back empty rather than as the epoch.
+  assert.equal(M.syncedLabel(0, "2026-09-26", true), "")
+  assert.equal(M.syncedLabel(NaN, "2026-09-26", true), "")
+})
+
 test("relativeDay names the near days and dates the rest", () => {
   assert.equal(M.relativeDay("2026-09-26", "2026-09-26"), "Today")
   assert.equal(M.relativeDay("2026-09-27", "2026-09-26"), "Tomorrow")

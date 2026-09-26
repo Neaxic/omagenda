@@ -149,14 +149,19 @@ Item {
 
   // Which page the popup is on. It lives here with the rest of the view state so
   // both monitors agree, and so the pages can be driven over IPC for testing.
-  property string uiPage: "month"      // month | year | detail | compose
+  property string uiPage: "month"      // month | year | detail | compose | calendars
   property string uiEventId: ""
 
   function showPage(name, id) {
     var page = String(name || "month")
-    if (["month", "year", "detail", "compose"].indexOf(page) === -1) return false
+    if (["month", "year", "detail", "compose", "calendars"].indexOf(page) === -1) return false
     uiEventId = id === undefined || id === null ? "" : String(id)
     uiPage = page
+    // Arriving on the calendars page re-asks Google what exists, so a calendar
+    // shared with the account since last time is simply there. It belongs here
+    // rather than in the panel's button handler: the page can also be reached
+    // over IPC, and it would be a trap for that route to skip the refresh.
+    if (page === "calendars") refreshCalendars()
     return true
   }
 
@@ -440,6 +445,20 @@ Item {
   property var googleState: ({ client: false, authorized: false })
   property var calendarList: []
 
+  // The connect flow's own state. `connecting` stays true from the press until
+  // Google is done with the user, which is however long they spend staring at a
+  // consent screen — so the panel has something to say in the meantime.
+  property bool connecting: false
+  property string googleError: ""
+
+  // Whether this copy of Datebook has an OAuth client at all. Without one the
+  // panel offers no button: a dead one that always errors is worse than saying
+  // the build has no Google integration.
+  readonly property bool googleAvailable: googleState ? googleState.client === true : false
+  readonly property bool googleConnected: googleState ? googleState.authorized === true : false
+  // env | user | builtin — "user" means they brought their own Cloud project.
+  readonly property string googleClientOrigin: googleState ? String(googleState.clientOrigin || "") : ""
+
   // Google is asked for a window rather than everything: a decade of history is
   // not worth the round trip. An incremental pass ignores these and follows the
   // sync token instead.
@@ -647,6 +666,139 @@ Item {
     return true
   }
 
+  function setSourceColor(id, color) {
+    var next = []
+    var found = false
+    for (var i = 0; i < sources.length; i++) {
+      var source = sources[i]
+      if (source.id === id) {
+        var copy = {}
+        for (var key in source) copy[key] = source[key]
+        copy.color = Model.normalizeColor(color)
+        next.push(copy)
+        found = true
+      } else next.push(source)
+    }
+    if (!found) return false
+    saveSources(next)
+    return true
+  }
+
+  function sourceForCalendar(calendarId) {
+    return sourceById("google:" + String(calendarId))
+  }
+
+  // A calendar added from the picker takes the first palette slot nothing else
+  // is using, so two calendars never arrive the same colour — which is the whole
+  // point of colouring by source.
+  function nextSourceColor() {
+    var taken = {}
+    for (var i = 0; i < sources.length; i++) taken[String(sources[i].color)] = true
+    for (var c = 1; c < Model.EVENT_COLORS.length; c++) {
+      var key = Model.EVENT_COLORS[c].key
+      if (!taken[key]) return key
+    }
+    return Model.EVENT_COLORS[1 + (sources.length % (Model.EVENT_COLORS.length - 1))].key
+  }
+
+  // What a row in the calendar picker does: add the calendar, or drop it and its
+  // cached events. Everything the source needs is already in `calendarList`, so
+  // the caller passes an id and nothing else.
+  function toggleCalendar(calendarId) {
+    var existing = sourceForCalendar(calendarId)
+    if (existing) return removeSource(existing.id) ? "removed" : "unknown source"
+
+    var entry = null
+    for (var i = 0; i < calendarList.length; i++)
+      if (String(calendarList[i].id) === String(calendarId)) { entry = calendarList[i]; break }
+    if (!entry) return "unknown calendar"
+
+    var id = addSource(entry.id, entry.name, nextSourceColor())
+    // A calendar Google only lets us read must not offer an edit button later.
+    if (entry.writable === false) {
+      var next = []
+      for (var j = 0; j < sources.length; j++) {
+        var source = sources[j]
+        if (source.id === id) {
+          var copy = {}
+          for (var key in source) copy[key] = source[key]
+          copy.writable = false
+          next.push(copy)
+        } else next.push(source)
+      }
+      saveSources(next)
+    }
+    return id
+  }
+
+  // --- connecting -----------------------------------------------------------------
+  // One press: consent in the browser if there is no grant yet, then the calendar
+  // list, then the user's primary calendar added and synced so something shows up
+  // straight away. Adding more calendars is the picker's job after that.
+  function connectGoogle() {
+    if (connecting) return "busy"
+    if (!googleAvailable) return "no client"
+    connecting = true
+    googleError = ""
+    connectProc.command = [gcalBin, "connect"]
+    connectProc.running = false
+    connectProc.running = true
+    return "ok"
+  }
+
+  function cancelConnect() {
+    if (!connecting) return false
+    connectProc.running = false
+    connecting = false
+    return true
+  }
+
+  function finishConnect(text) {
+    connecting = false
+    var reply = {}
+    try { reply = JSON.parse(String(text || "{}")) } catch (e) { reply = {} }
+
+    if (reply.error) { googleError = String(reply.error); return }
+    if (!reply.ok) { googleError = "the Google helper said nothing back"; return }
+
+    // Clear it here rather than only on the way in: onExited may have raced
+    // ahead and written a failure for a call that in fact succeeded.
+    googleError = ""
+    calendarList = reply.calendars || []
+    askGoogle("status")
+
+    // First connection: put the primary calendar in without making them pick it
+    // out of a list where it is the obvious answer.
+    if (googleSources().length === 0 && String(reply.primary || "") !== "")
+      toggleCalendar(reply.primary)
+    else
+      syncAll(false)
+  }
+
+  function disconnectGoogle() {
+    googleError = ""
+    var keep = []
+    for (var i = 0; i < sources.length; i++)
+      if (sources[i].kind !== "google") keep.push(sources[i])
+    // Drop the calendars and their cache first: the grid should empty as the
+    // grant goes, not stay full of events we can no longer refresh.
+    var wasGoogle = keep.length !== sources.length
+    if (wasGoogle) {
+      saveSources(keep)
+      remote = ({})
+      saveCache()
+    }
+    calendarList = []
+    logoutProc.command = [gcalBin, "logout"]
+    logoutProc.running = false
+    logoutProc.running = true
+    return "ok"
+  }
+
+  function refreshCalendars() {
+    if (googleConnected) askGoogle("calendars")
+  }
+
   function saveCache() {
     var out = {}
     for (var id in remote) {
@@ -718,10 +870,40 @@ Item {
       onStreamFinished: {
         var reply = {}
         try { reply = JSON.parse(String(text || "{}")) } catch (e) { reply = {} }
-        if (reply.calendars) root.calendarList = reply.calendars
+        // An error reply is an error, not a new state: letting it land in
+        // googleState would blank out `client` and `authorized` and leave the
+        // panel offering to connect a build that is already connected.
+        if (reply.error) root.googleError = String(reply.error)
+        else if (reply.calendars) { root.calendarList = reply.calendars; root.googleError = "" }
         else root.googleState = reply
       }
     }
+  }
+
+  // Separate from googleProc because it outlives every other call here: it is
+  // running for as long as the user is in the browser.
+  Process {
+    id: connectProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.finishConnect(text)
+    }
+    onExited: function(code) {
+      // A non-zero exit that printed nothing parseable still has to clear the
+      // spinner, or the panel waits on a browser that has gone.
+      if (root.connecting) {
+        root.connecting = false
+        if (root.googleError === "")
+          root.googleError = code === 4
+            ? "the browser never came back — try again"
+            : "the Google helper exited " + code
+      }
+    }
+  }
+
+  Process {
+    id: logoutProc
+    onExited: root.askGoogle("status")
   }
 
   function askGoogle(what) {
@@ -793,6 +975,11 @@ Item {
       root.save([])
     }
   }
+
+  // Ask once at startup whether this build has a Google client and whether the
+  // user has already granted it, so the calendars page knows what to offer
+  // before anyone presses anything.
+  Component.onCompleted: root.askGoogle("status")
 
   // --- IPC --------------------------------------------------------------------
   // `omarchy-shell datebook <method> [args]`. Handy for testing without
@@ -870,9 +1057,9 @@ Item {
 
     function today(): string { root.goToday(); return root.todayISO }
 
-    // month | year | detail <id> | compose [id]
+    // month | year | detail <id> | compose [id] | calendars
     function page(name: string, id: string): string {
-      return root.showPage(name, id) ? root.uiPage : "expected month|year|detail|compose"
+      return root.showPage(name, id) ? root.uiPage : "expected month|year|detail|compose|calendars"
     }
 
     function barMode(value: string): string {
@@ -925,6 +1112,16 @@ Item {
       return root.setSourceEnabled(id, enabled === "true") ? "ok" : "unknown source"
     }
 
+    function sourceColor(id: string, color: string): string {
+      return root.setSourceColor(id, color) ? "ok" : "unknown source"
+    }
+
+    // The calendar picker's row action, by Google calendar id.
+    function calendarToggle(calendarId: string): string {
+      if (calendarId === "") return "expected a calendar id"
+      return root.toggleCalendar(calendarId)
+    }
+
     // --- google ---------------------------------------------------------------
     // The helper is asked in the background; `googleResult` reads what came back,
     // the same shape `bin/gcal` prints.
@@ -935,8 +1132,17 @@ Item {
     }
 
     function googleResult(): string {
-      return JSON.stringify({ state: root.googleState, calendars: root.calendarList })
+      return JSON.stringify({
+        state: root.googleState, calendars: root.calendarList,
+        connecting: root.connecting, error: root.googleError
+      })
     }
+
+    // What the SYNC WITH GOOGLE CALENDAR button does. Returns as soon as the
+    // browser is open; `googleResult` says how it went.
+    function connect(): string { return root.connectGoogle() }
+
+    function disconnect(): string { return root.disconnectGoogle() }
 
     function sync(force: string): string {
       return root.syncAll(force === "true" || force === "full")

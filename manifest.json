@@ -5,14 +5,15 @@
   "version": "0.1.0",
   "author": "andre",
   "license": "MIT",
-  "description": "A calendar in the Omarchy bar: a rolling grid of the week you are in and the two ahead, a year view, a day agenda with event detail and compose pages, and your own events kept in a plain JSON file. No accounts, no network.",
+  "description": "A calendar in the Omarchy bar: a rolling grid of the week you are in and the two ahead, a year view, a day agenda with event detail and compose pages, and your own events kept in a plain JSON file. Google Calendar syncs both ways at one button press, or leave it off and stay entirely local.",
   "keywords": [
     "calendar",
     "events",
     "agenda",
     "month",
     "dates",
-    "time"
+    "time",
+    "google"
   ],
   "kinds": [
     "service",
