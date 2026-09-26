@@ -300,6 +300,16 @@ plugin stays a git clone with nothing to install. Tokens live in
 `~/.config/datebook/google-tokens.json` at `0600` and are never logged. There is
 no Datebook server anywhere in the path.
 
+`~/.config/datebook/` is created `0700`, because the rest of what lands in it is
+personal too — your event store, and `cache.json`, which holds every event synced
+down from Google. Qt's `FileView` writes files `0644`, so the directory is what
+keeps other accounts on the machine out. Installs made before this was fixed kept
+the `0755` that `mkdir -p` gives; if yours is one, close it yourself:
+
+```bash
+chmod 700 ~/.config/datebook
+```
+
 Two caveats worth repeating from the setup guide, both about the *registration*
 rather than the code: **publish the consent screen to *In production*** (left in
 *Testing*, Google expires refresh tokens after seven days and sync stops weekly),

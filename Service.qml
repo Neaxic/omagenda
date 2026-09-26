@@ -983,9 +983,12 @@ Item {
 
   // First run: create ~/.config/datebook and write an empty store, so the file
   // the user is told about actually exists before they go looking for it.
+  // 0700, because everything that lands in here is personal: the event store,
+  // and the cache holding every synced Google event. FileView writes its files
+  // 0644, so the directory is what keeps other accounts on the machine out.
   Process {
     id: mkdirProc
-    command: ["mkdir", "-p", root.configDir]
+    command: ["mkdir", "-p", "-m", "700", root.configDir]
     onExited: function(code) {
       if (code !== 0) { root.lastError = "Could not create " + root.configDir; return }
       root.loaded = true
