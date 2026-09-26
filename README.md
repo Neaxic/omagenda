@@ -69,39 +69,54 @@ screen. 64 node assertions, `omarchy plugin validate` and `qmllint` clean.
 
 **Built but never run against the real service: Google sync**
 
-The whole path exists — OAuth, token refresh, incremental pulls, write-through,
-the sources model, the CALENDAR switch in compose, and a CALENDARS page whose one
-button does the lot — and was verified end to end with a stubbed `bin/gcal`
-standing in for Google. It has **never talked to Google**, because that needs a
-registered OAuth client.
+The whole path is built and running against real Google: OAuth, token refresh,
+incremental pulls, write-through, the sources model, the CALENDAR switch in
+compose, and a CALENDARS page whose one button does the lot.
 
-For the user there is nothing to set up: **CALENDARS → SYNC WITH GOOGLE
-CALENDAR**, allow it in the browser, and their primary calendar starts syncing.
-That works because the OAuth client ships in the plugin, at `google-app.json`.
+There is nothing for you to set up. **CALENDARS → SYNC WITH GOOGLE CALENDAR**,
+allow it in the browser, and your primary calendar starts syncing. Every other
+calendar on the account is a row on the same page — click to add or drop it,
+each gets its own colour. That works because the OAuth client ships in the
+plugin, at `google-app.json`, so the Cloud project is Datebook's rather than
+yours.
 
-**That file is empty in the repo**, so the page currently says the build has no
-Google client and offers no button. Filling it in is a one-off in the Cloud
-console — and Google's verification review is the real gate, since calendar
-scopes are *sensitive*: unverified means either 7-day refresh tokens (Testing) or
-a warning screen and a user cap (Production).
+**Two things to expect, both about the app registration rather than the code:**
 
-**[docs/google-verification.md](docs/google-verification.md)** walks the whole
-thing, in two parts: *working* (project, desktop client,
-`bin/set-google-client`, publish — an hour) and *verified* (the public site at
-[gaard.dev](https://gaard.dev), Search Console, a demo video, the scope
-justifications to paste — days to weeks, mostly waiting on Google).
+- **Google will warn you.** Consent is fronted by *"Google hasn't verified this
+  app"*. Choose **Advanced → Go to Datebook**. Calendar scopes are *sensitive*,
+  so Google requires a review — a domain, a privacy policy, a demo video — and
+  until that clears, everyone sees the screen. It says nothing about what
+  Datebook does with your data, which is: keep it on your machine.
+- **There is a cap of 100 accounts** that may connect while the app is
+  unverified, counted over the project's lifetime. If Datebook is popular enough
+  that you have hit it, the button will fail and this README is out of date —
+  open an issue.
 
-Anyone who would rather use their own Cloud project still can:
-`~/.config/datebook/google-client.json` takes precedence over the shipped one,
-and `$DATEBOOK_GOOGLE_CLIENT_ID` over both.
+**What it asks for:** `calendar.events` (read and write events) and
+`calendar.calendarlist.readonly` (see which calendars exist). Deliberately *not*
+the blanket `calendar` scope — Datebook cannot create, rename or delete a
+calendar, only the events inside one. Revoke any time with **DISCONNECT**, or at
+<https://myaccount.google.com/permissions>.
 
-**The store currently holds eight demo events** — Design review, Standup, Ship
-v0.2, Dinner, Sprint planning, and three runs (Berlin trip, Sprint 12, Design
-workshop) — added to photograph the grid. Clear them whenever real use starts:
+**On the shipped client.** `google-app.json` holds a client ID and secret in
+plain sight, which is correct rather than a leak: for a *Desktop app* client the
+secret ships in every copy and cannot be confidential, so it identifies the app
+and nothing more. [RFC 8252 §8.5](https://datatracker.ietf.org/doc/html/rfc8252#section-8.5)
+says to expect exactly this, and PKCE — a verifier generated per login and never
+stored — is what actually protects the exchange. Holding those strings lets
+nobody read a calendar; that still takes your consent, on Google's own screen.
+rclone, gcalcli and every desktop app with a Google button ship the same way.
 
-```bash
-rm ~/.config/datebook/events.json     # the service writes a fresh empty one
-```
+Anyone who would rather answer to their own Cloud project can:
+`~/.config/datebook/google-client.json` takes precedence over the shipped client,
+and `$DATEBOOK_GOOGLE_CLIENT_ID` over both. That also sidesteps the 100-account
+cap entirely, since you are then the only user of your own app. See
+[docs/google-setup.md](docs/google-setup.md).
+
+**[docs/google-verification.md](docs/google-verification.md)** is the maintainer's
+path to removing the warning screen: the public site at
+[gaard.dev](https://gaard.dev), Search Console, a demo video and the scope
+justifications to paste — days to weeks, mostly waiting on Google.
 
 **Not built**
 

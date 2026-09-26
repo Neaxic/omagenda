@@ -32,13 +32,15 @@ Google directly.
 
 ## If you are shipping Datebook
 
-`google-app.json` in the plugin root is empty in the repo. Until you fill it in, the
-calendars page says the build has no Google client and offers no button — which is the
-honest state, not a bug.
+`google-app.json` in the plugin root carries Datebook's own client, so a clone syncs
+out of the box. If you clear it (`bin/set-google-client --clear`), the calendars page
+says the build has no Google client and offers no button — which is the honest state,
+not a bug.
 
-Filling it in is a one-off in the Google Cloud console, and getting the warning screen
-removed is a one-off review by Google. Both are walked start to finish, with the exact
-field values and the text to paste into the submission, in
+That client is registered and published, so sync works today. What is *not* done is
+Google's verification review, which is what removes the "hasn't verified this app"
+screen and the 100-account cap. It is walked start to finish, with the exact field
+values and the text to paste into the submission, in
 **[google-verification.md](google-verification.md)**.
 
 The short form:
