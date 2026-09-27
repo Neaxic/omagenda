@@ -1004,6 +1004,16 @@ function clockTime(nowMinutes, use24) {
   return formatTime(pad2(Math.floor(total / 60)) + ":" + pad2(total % 60), use24)
 }
 
+// "Sunday 27/9" — the date half of the bar's clock. The weekday in full
+// because on a bar that is the part you actually read, and the numbers bare of
+// leading zeros so they stay short beside the time. Not relativeDayOrDate():
+// that abbreviates the day and names the month, which is a different shape.
+function clockDate(iso) {
+  var date = fromISO(iso)
+  if (!date) return ""
+  return WEEKDAY_LONG[date.getDay()] + " " + date.getDate() + "/" + (date.getMonth() + 1)
+}
+
 // When a sync last landed, for the calendars page. The wall-clock time rather
 // than "4 minutes ago": a relative age is only honest if something redraws it,
 // and this line sits on a page that may be open for a while. The date comes
@@ -1059,14 +1069,14 @@ function normalizeBarMode(value) {
 //   next  -> "14:30 Dentist" / "Tue Standup", the date when nothing is due
 //   date  -> "Mon 5 Oct"
 //   count -> "3 today"
-//   clock -> "Mon 5 Oct 14:32", a wall clock that says nothing about events
+//   clock -> "Monday 5/10 14:32", a wall clock that says nothing about events
 function barLabel(options) {
   var o = options || {}
   var mode = normalizeBarMode(o.mode)
   var today = o.todayISO || todayISO()
   if (mode === "icon") return ""
   if (mode === "date") return relativeDayOrDate(today, today)
-  if (mode === "clock") return relativeDayOrDate(today, today) + " " + clockTime(o.nowMinutes, o.use24)
+  if (mode === "clock") return clockDate(today) + " " + clockTime(o.nowMinutes, o.use24)
   if (mode === "count") {
     var n = o.todayCount || 0
     return n === 0 ? "Clear" : n + (n === 1 ? " event" : " events")
@@ -1255,6 +1265,7 @@ if (typeof module !== "undefined") {
     barIconGlyph: barIconGlyph,
     normalizeBarMode: normalizeBarMode,
     clockTime: clockTime,
+    clockDate: clockDate,
     barLabel: barLabel,
     tooltipText: tooltipText
   }

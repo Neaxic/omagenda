@@ -668,11 +668,24 @@ test("barLabel reflects the mode it is given", () => {
   assert.equal(M.barLabel({ mode: "count", todayCount: 0, todayISO: "2026-09-26" }), "Clear")
   assert.equal(M.barLabel({ mode: "icon", next, todayISO: "2026-09-26" }), "")
   assert.equal(M.barLabel({ mode: "clock", next, todayISO: "2026-09-26", nowMinutes: 14 * 60 + 32 }),
-    "Sat 26 Sep 14:32")
+    "Saturday 26/9 14:32")
   assert.equal(M.barLabel({ mode: "clock", todayISO: "2026-09-26", nowMinutes: 9, use24: false }),
-    "Sat 26 Sep 12:09am")
+    "Saturday 26/9 12:09am")
   // Nothing coming up falls back to the date.
   assert.equal(M.barLabel({ mode: "next", next: null, todayISO: "2026-09-26" }), "Sat 26 Sep")
+})
+
+test("clockDate writes the day out and leaves the numbers bare", () => {
+  assert.equal(M.clockDate("2026-09-27"), "Sunday 27/9")
+  // Neither half is padded: a single-digit day and month stay single digits,
+  // which is the whole point of this shape over relativeDayOrDate().
+  assert.equal(M.clockDate("2026-09-05"), "Saturday 5/9")
+  assert.equal(M.clockDate("2026-01-01"), "Thursday 1/1")
+  assert.equal(M.clockDate("2026-12-31"), "Thursday 31/12")
+  // getMonth() is zero-based; December must read 12, not 11.
+  assert.equal(M.clockDate("2026-12-01"), "Tuesday 1/12")
+  assert.equal(M.clockDate("nonsense"), "")
+  assert.equal(M.clockDate(""), "")
 })
 
 test("clockTime wraps a stale minute instead of printing an impossible hour", () => {
