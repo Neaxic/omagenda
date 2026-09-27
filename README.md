@@ -19,18 +19,18 @@ calendar, only the events inside one. Revoke any time with **DISCONNECT**, or at
 <https://myaccount.google.com/permissions>.
 
 ## What you get
-
-- **A grid that rolls.** The week you are in and the two ahead, so the calendar
+- **Google Calendar, both ways, at one button.** No API keys, no Cloud console.
+  Press it, allow it in the browser, and your calendars are there — every one
+  on the account is a row you can switch on, each with its own colour.
+- **Events that are yours.** A plain JSON file at
+  `~/.config/omagenda/events.json` you can read, edit in a text editor and back
+  up. The calendar follows the file while you type in it.
+- **A prettier, more detailed overview** A few diffrend views to chose from.
+  Options; The week you are in and the two ahead, so the calendar
   shows the days still in front of you. MONTH expands it when you want the
   shape of a whole one, YEAR gives you twelve miniatures to jump from.
 - **A day agenda.** Click a day, get its events under the grid — time, length
   and place — then the chevron for the full event, with edit and delete.
-- **Events that are yours.** A plain JSON file at
-  `~/.config/omagenda/events.json` you can read, edit in a text editor and back
-  up. The calendar follows the file while you type in it.
-- **Google Calendar, both ways, at one button.** No API keys, no Cloud console.
-  Press it, allow it in the browser, and your calendars are there — every one
-  on the account is a row you can switch on, each with its own colour.
 - **Multi-day events draw as bars.** A trip or a sprint runs across the days it
   covers, stacked in lanes when they overlap, cut flush at the week's edge when
   it carries on.
