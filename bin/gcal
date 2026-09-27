@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Google Calendar client for Datebook.
+"""Google Calendar client for Omagenda.
 
 Everything that talks to Google lives here: the OAuth dance, token refresh, and
 the handful of API calls the plugin needs. Standard library only — no pip, no
@@ -20,9 +20,9 @@ so the QML side can surface the message instead of guessing from an exit code.
 
 The OAuth client comes from the first of these that has a client_id:
 
-  1. $DATEBOOK_GOOGLE_CLIENT_ID / $DATEBOOK_GOOGLE_CLIENT_SECRET
-  2. ~/.config/datebook/google-client.json   — the user's own, if they want one
-  3. <plugin>/google-app.json                — Datebook's own, shipped
+  1. $OMAGENDA_GOOGLE_CLIENT_ID / $OMAGENDA_GOOGLE_CLIENT_SECRET
+  2. ~/.config/omagenda/google-client.json   — the user's own, if they want one
+  3. <plugin>/google-app.json                — Omagenda's own, shipped
 
 (3) is why a user only has to press a button: the app registration is the
 plugin's, not theirs. A client shipped inside a desktop app is not a secret and
@@ -30,7 +30,7 @@ is not treated as one (RFC 8252 §8.5); PKCE is what actually protects the
 exchange. (2) exists for anyone who would rather answer to their own Cloud
 project — it wins over the shipped one.
 
-Tokens live in ~/.config/datebook/google-tokens.json at 0600 and are never
+Tokens live in ~/.config/omagenda/google-tokens.json at 0600 and are never
 printed.
 """
 
@@ -49,7 +49,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-CONFIG_DIR = os.path.expanduser("~/.config/datebook")
+CONFIG_DIR = os.path.expanduser("~/.config/omagenda")
 CLIENT_FILE = os.path.join(CONFIG_DIR, "google-client.json")
 TOKEN_FILE = os.path.join(CONFIG_DIR, "google-tokens.json")
 
@@ -119,9 +119,9 @@ def client_from_file(path):
 
 def resolve_client():
     """The OAuth client to use, and where it came from. (None, "") if unset."""
-    env_id = os.environ.get("DATEBOOK_GOOGLE_CLIENT_ID", "").strip()
+    env_id = os.environ.get("OMAGENDA_GOOGLE_CLIENT_ID", "").strip()
     if env_id:
-        return (env_id, os.environ.get("DATEBOOK_GOOGLE_CLIENT_SECRET", "").strip()), "env"
+        return (env_id, os.environ.get("OMAGENDA_GOOGLE_CLIENT_SECRET", "").strip()), "env"
     # The user's own client outranks the shipped one: if they went to the
     # trouble of registering a project, that is the one they meant.
     found = client_from_file(CLIENT_FILE)
@@ -136,7 +136,7 @@ def resolve_client():
 def client_credentials():
     client, _origin = resolve_client()
     if not client:
-        die("this copy of Datebook ships no Google client, and you have not set "
+        die("this copy of Omagenda ships no Google client, and you have not set "
             "one up. See docs/google-setup.md.", code=2, needs="client")
     return client
 
@@ -179,7 +179,7 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
-        message = "Datebook is connected. You can close this tab." if ok \
+        message = "Omagenda is connected. You can close this tab." if ok \
             else "Authorisation failed: " + CallbackHandler.result.get("error", "no code")
         self.wfile.write(
             ("<!doctype html><meta charset=utf-8>"
@@ -220,13 +220,13 @@ def do_login():
         }
         url = AUTH_URL + "?" + urllib.parse.urlencode(params)
 
-        sys.stderr.write("Opening your browser to authorise Datebook…\n")
+        sys.stderr.write("Opening your browser to authorise Omagenda…\n")
         sys.stderr.write("If nothing opens, paste this into a browser:\n\n%s\n\n" % url)
         # Until Google has finished verifying the app registration, consent is
         # fronted by a scare screen. Saying so up front beats the user deciding
         # the plugin is malware halfway through.
-        sys.stderr.write("If Google says it has not verified Datebook, choose "
-                         "Advanced → Go to Datebook.\n")
+        sys.stderr.write("If Google says it has not verified Omagenda, choose "
+                         "Advanced → Go to Omagenda.\n")
         try:
             subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)

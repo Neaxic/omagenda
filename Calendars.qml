@@ -2,7 +2,7 @@ import QtQuick
 import qs.Commons
 import "Model.js" as Model
 
-// The calendars page: what Datebook is showing you, and the one button that
+// The calendars page: what Omagenda is showing you, and the one button that
 // connects Google. There is deliberately nothing to fill in — the OAuth client
 // ships with the plugin, so consent in a browser is the whole setup.
 //
@@ -95,13 +95,13 @@ Column {
       if (!root.available)
         return "This build has no Google client, so there is nothing to connect. "
              + "See docs/google-setup.md — either build one in, or put your own in "
-             + "~/.config/datebook/google-client.json."
+             + "~/.config/omagenda/google-client.json."
       if (root.connecting)
-        return "Waiting for your browser. Allow Datebook to read and write your "
+        return "Waiting for your browser. Allow Omagenda to read and write your "
              + "events, then come back. If Google says it has not verified "
-             + "Datebook, choose Advanced → Go to Datebook."
+             + "Omagenda, choose Advanced → Go to Omagenda."
       if (!root.connected)
-        return "Datebook will open your browser once. It asks to read and write "
+        return "Omagenda will open your browser once. It asks to read and write "
              + "events, and to see which calendars you have — not to create or "
              + "delete calendars. Nothing to copy, no keys to find."
       if (root.rows.length === 0)

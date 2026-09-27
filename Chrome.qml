@@ -2,7 +2,7 @@ import QtQuick
 import qs.Commons
 import "Model.js" as Model
 
-// Datebook's design tokens in one place, so the six view components don't each
+// Omagenda's design tokens in one place, so the six view components don't each
 // re-derive them. The values are the ratios measured off the mockup: every ink
 // level is the panel foreground at a fixed alpha, so the look survives a theme
 // change instead of hard-coding near-black and off-white.

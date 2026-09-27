@@ -1,4 +1,4 @@
-// Pure date and event helpers for Datebook. ES5 only — this file is shared by
+// Pure date and event helpers for Omagenda. ES5 only — this file is shared by
 // QML (Qt's JS engine, via `import "Model.js" as Model`) and the node tests, so
 // it must not touch QML, the DOM or anything Qt-specific.
 //
@@ -41,7 +41,7 @@ var EVENT_COLORS = [
   { key: "plum", token: "magenta", fallback: "#a98bbd", slot: 5 }
 ]
 
-// Google's eleven event colours, onto Datebook's six slots. The ids are fixed by
+// Google's eleven event colours, onto Omagenda's six slots. The ids are fixed by
 // the API (a calendar's own colour is a different set), and the pairs below are
 // the nearest hue in each direction, so a colour survives a round trip:
 // clay 11 Tomato · sand 5 Banana · moss 10 Basil · sky 7 Peacock ·
@@ -634,7 +634,7 @@ function removeEvent(events, id) {
 
 // ---------------------------------------------------------------- google
 
-// A Google event as Datebook sees it. Calls come back with singleEvents=true,
+// A Google event as Omagenda sees it. Calls come back with singleEvents=true,
 // so a recurring event arrives already expanded into instances and each one is
 // an ordinary single event here — no rule we would have to re-implement.
 //

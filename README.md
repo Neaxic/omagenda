@@ -2,18 +2,18 @@
 
 
 
-# Datebook
+# Omagenda
 
 A calendar for the Omarchy bar - expanding the design already provided by DHH, this "upgrade" allows syncing with mail clients (only google calendar currently), and a greater overview.
 The app has had a short life, but im already getting benefits from this overhaul, so figured id share it.
 
-For the google syncing to work, i need various setup on google cloud. You may come across "Google hasn't verified this app", you can safely proceed and chose Advanced → Go to Datebook.
+For the google syncing to work, i need various setup on google cloud. You may come across "Google hasn't verified this app", you can safely proceed and chose Advanced → Go to Omagenda.
 **There is no server, there is no db, this is all ran locally.**
 Because of the google project limitations, the plugin (currently) only allows for 100 users, ill expand if demand comes, and naturally i might care for the setup a bit more.
 
 **What it asks for:** `calendar.events` (read and write events) and
 `calendar.calendarlist.readonly` (see which calendars exist). Deliberately *not*
-the blanket `calendar` scope — Datebook cannot create, rename or delete a
+the blanket `calendar` scope — Omagenda cannot create, rename or delete a
 calendar, only the events inside one. Revoke any time with **DISCONNECT**, or at
 <https://myaccount.google.com/permissions>.
 
@@ -25,7 +25,7 @@ calendar, only the events inside one. Revoke any time with **DISCONNECT**, or at
 - **A day agenda.** Click a day, get its events under the grid — time, length
   and place — then the chevron for the full event, with edit and delete.
 - **Events that are yours.** A plain JSON file at
-  `~/.config/datebook/events.json` you can read, edit in a text editor and back
+  `~/.config/omagenda/events.json` you can read, edit in a text editor and back
   up. The calendar follows the file while you type in it.
 - **Google Calendar, both ways, at one button.** No API keys, no Cloud console.
   Press it, allow it in the browser, and your calendars are there — every one
@@ -42,32 +42,32 @@ calendar, only the events inside one. Revoke any time with **DISCONNECT**, or at
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/Neaxic/omarchy-datebook.git --enable
+omarchy plugin add https://github.com/Neaxic/omagenda.git --enable
 ```
 
-Or by hand: copy this folder to `~/.config/omarchy/plugins/datebook/`, then
+Or by hand: copy this folder to `~/.config/omarchy/plugins/io.github.neaxic.omagenda/`, then
 
 ```bash
 omarchy-shell shell rescanPlugins
-omarchy plugin enable datebook center     # or left / right
+omarchy plugin enable io.github.neaxic.omagenda center   # or left / right
 omarchy restart shell
 ```
 
 Nothing to install for the calendar itself. **Google sync needs `python3`**,
 standard library only — no `pip`, no SDK, no daemon. Arch has it already.
 
-Datebook has a clock mode, so it can stand in for the built-in clock: disable
-`omarchy.clock` and set `bar.centerAnchor` to `datebook` in
+Omagenda has a clock mode, so it can stand in for the built-in clock: disable
+`omarchy.clock` and set `bar.centerAnchor` to `io.github.neaxic.omagenda` in
 `~/.config/omarchy/shell.json`.
 
 ## Uninstall
 
 ```bash
-omarchy plugin disable datebook
-omarchy plugin remove datebook
+omarchy plugin disable io.github.neaxic.omagenda
+omarchy plugin remove io.github.neaxic.omagenda
 ```
 
-Your events stay in `~/.config/datebook/` until you delete that folder. If you
+Your events stay in `~/.config/omagenda/` until you delete that folder. If you
 had Google sync on, hit **DISCONNECT** on the calendars page first.
 
 ## Using it
@@ -99,13 +99,13 @@ colour. Edits go both ways. Read-only calendars (a subscribed feed, someone
 else's shared calendar) show their events and hide EDIT and DELETE.
 
 If you would rather answer to your own Google Cloud project than the one that
-ships here, put it in `~/.config/datebook/google-client.json` and it takes
+ships here, put it in `~/.config/omagenda/google-client.json` and it takes
 precedence — that also sidesteps the hundred-account cap, since you would then
 be the only user of your own app.
 
 ## Your data
 
-Everything lives in `~/.config/datebook/`, which Datebook creates for your
+Everything lives in `~/.config/omagenda/`, which Omagenda creates for your
 account only:
 
 | File                 | What it is                                            |
@@ -115,7 +115,7 @@ account only:
 | `cache.json`         | A local copy of synced events, so the calendar draws offline. |
 | `google-tokens.json` | Your Google token, readable only by you.              |
 
-Datebook talks to Google and to nothing else — no analytics, no telemetry. With
+Omagenda talks to Google and to nothing else — no analytics, no telemetry. With
 sync off it makes no network connection at all.
 
 An event is `{"title", "date", "time", "durationMin", "location", "days",

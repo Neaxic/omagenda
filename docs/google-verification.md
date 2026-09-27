@@ -1,4 +1,4 @@
-# Getting Datebook's Google client registered and verified
+# Getting Omagenda's Google client registered and verified
 
 This is the one-off work that makes **SYNC WITH GOOGLE CALENDAR** work for everyone
 else. Users do none of it. Do it once and it is done.
@@ -22,11 +22,11 @@ Do 1 first. You need a working flow anyway: the demo video for 2 is a recording 
 
 ### 1.1 A project with the Calendar API on
 
-1. <https://console.cloud.google.com/> → **new project**, name it `Datebook`. The name
+1. <https://console.cloud.google.com/> → **new project**, name it `Omagenda`. The name
    is what users see on the consent screen, so spell it the way you want it read.
 2. **APIs & Services → Library** → search *Google Calendar API* → **Enable**.
 
-Nothing here costs money. The Calendar API is free at any volume Datebook will reach.
+Nothing here costs money. The Calendar API is free at any volume Omagenda will reach.
 
 ### 1.2 The consent screen
 
@@ -35,7 +35,7 @@ Nothing here costs money. The Calendar API is free at any volume Datebook will r
 | Field | Value |
 |---|---|
 | User type | **External** |
-| App name | `Datebook` |
+| App name | `Omagenda` |
 | User support email | your address |
 | Developer contact | your address |
 
@@ -46,12 +46,12 @@ Leave the rest for now — the logo and the links belong to Part 2.
 **APIs & Services → Credentials → Create credentials → OAuth client ID**
 
 - Application type: **Desktop app**
-- Name: `Datebook` (internal, users never see it)
+- Name: `Omagenda` (internal, users never see it)
 
 Copy the client ID and secret straight into the plugin:
 
 ```bash
-cd ~/.config/omarchy/plugins/datebook
+cd ~/.config/omarchy/plugins/omagenda
 bin/set-google-client '<client-id>.apps.googleusercontent.com' 'GOCSPX-<secret>'
 ```
 
@@ -63,8 +63,8 @@ bin/gcal status      # client: true, clientOrigin: builtin
 bin/gcal connect     # opens the browser; allow it
 ```
 
-On the unverified-app screen choose **Advanced → Go to Datebook**. That screen is
-about the registration's review status, not about anything Datebook does — it is
+On the unverified-app screen choose **Advanced → Go to Omagenda**. That screen is
+about the registration's review status, not about anything Omagenda does — it is
 exactly what Part 2 removes.
 
 Then open the bar popup → **SETTINGS → Calendars**. Your calendars should be listed.
@@ -128,7 +128,7 @@ This is the step people forget, and the submission bounces without it.
 
 | Field | Value |
 |---|---|
-| App name | `Datebook` — must match the site and the video |
+| App name | `Omagenda` — must match the site and the video |
 | App logo | square PNG, 120×120 or larger, no rounded corners baked in |
 | Application home page | `https://gaard.dev/` |
 | Application privacy policy link | `https://gaard.dev/privacy/` |
@@ -152,14 +152,14 @@ Unlisted on YouTube. Reviewers watch it. It has to show, in one continuous take:
 1. **The OAuth client ID on screen.** Easiest honest way: start in a terminal running
    `bin/gcal connect`, which prints the full authorization URL — the `client_id=`
    parameter is right there. Let it sit on screen for a couple of seconds.
-2. **The consent screen**, showing the app name *Datebook* and both scopes as Google
+2. **The consent screen**, showing the app name *Omagenda* and both scopes as Google
    words them.
 3. **Granting** access, and landing back in the app.
 4. **Each scope actually being used**, which is the part most first submissions miss:
    - `calendar.calendarlist.readonly` → the CALENDARS page listing the account's
      calendars, and you clicking one to add it.
    - `calendar.events` → events from that calendar appearing in the grid and the
-     agenda; then create an event in Datebook and show it arriving in Google Calendar
+     agenda; then create an event in Omagenda and show it arriving in Google Calendar
      in a browser tab.
 5. **Revoking**, via DISCONNECT. Not required, but it answers the question a reviewer
    is about to ask.
@@ -177,18 +177,18 @@ the scopes.
 
 **Why `calendar.events`:**
 
-> Datebook is a calendar application for the Linux desktop. It displays the user's
+> Omagenda is a calendar application for the Linux desktop. It displays the user's
 > events in a status-bar widget and a calendar grid, and lets the user create, edit
 > and delete events from that interface. Reading events is required to display them;
 > writing is required because creating and editing events is the application's primary
 > function. A narrower read-only scope would remove the ability to create or edit an
 > event, which is the core of what the application is for. The broader `calendar`
-> scope is deliberately not requested, as Datebook has no need to create, rename or
+> scope is deliberately not requested, as Omagenda has no need to create, rename or
 > delete calendars themselves.
 
 **Why `calendar.calendarlist.readonly`:**
 
-> Datebook lets the user choose which of their calendars to display and sync, each in
+> Omagenda lets the user choose which of their calendars to display and sync, each in
 > its own colour. To present that choice, the application must list the calendars on
 > the account together with their names and the user's access level — the access level
 > is used to mark read-only calendars so the interface does not offer edit controls
@@ -197,7 +197,7 @@ the scopes.
 
 **Where the data goes**, if asked:
 
-> Datebook runs entirely on the user's own computer and communicates directly with
+> Omagenda runs entirely on the user's own computer and communicates directly with
 > Google's API over HTTPS. There is no server operated by the developer, no account
 > system, and no analytics. Event data fetched from Google is cached in a file in the
 > user's home directory so the calendar renders offline, and OAuth tokens are stored

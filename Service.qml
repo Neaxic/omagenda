@@ -3,10 +3,10 @@ import Quickshell
 import Quickshell.Io
 import "Model.js" as Model
 
-// Headless data layer for Datebook, mounted once by the shell as this plugin's
+// Headless data layer for Omagenda, mounted once by the shell as this plugin's
 // service: it owns the event file, the "today" clock and the IPC target. Every
 // bar widget (one per monitor) reads this same instance through
-// shell.serviceFor("datebook"), so the two never disagree about what day it is.
+// shell.serviceFor("io.github.neaxic.omagenda"), so the two never disagree about what day it is.
 // All date and event logic lives in Model.js.
 Item {
   id: root
@@ -43,14 +43,14 @@ Item {
   }
 
   function persistSettings(values) {
-    var entry = { id: "datebook" }
+    var entry = { id: "io.github.neaxic.omagenda" }
     for (var key in settings) if (key !== "id") entry[key] = settings[key]
     // `id` is the bar's handle on this widget, not a setting. It is skipped on
     // the way in above, so skip it here too — otherwise the last writer wins
     // and a caller could rename the entry out from under the bar.
     for (var name in values) if (name !== "id") entry[name] = values[name]
     settings = entry
-    if (shell && typeof shell.updateEntryInline === "function") shell.updateEntryInline("datebook", entry)
+    if (shell && typeof shell.updateEntryInline === "function") shell.updateEntryInline("io.github.neaxic.omagenda", entry)
   }
 
   // --- settings ---------------------------------------------------------------
@@ -68,7 +68,7 @@ Item {
 
   // --- paths ------------------------------------------------------------------
   readonly property string home: Quickshell.env("HOME")
-  readonly property string configDir: home + "/.config/datebook"
+  readonly property string configDir: home + "/.config/omagenda"
   readonly property string eventsPath: configDir + "/events.json"
   readonly property string sourcesPath: configDir + "/sources.json"
   readonly property string cachePath: configDir + "/cache.json"
@@ -517,7 +517,7 @@ Item {
   property bool connecting: false
   property string googleError: ""
 
-  // Whether this copy of Datebook has an OAuth client at all. Without one the
+  // Whether this copy of Omagenda has an OAuth client at all. Without one the
   // panel offers no button: a dead one that always errors is worse than saying
   // the build has no Google integration.
   readonly property bool googleAvailable: googleState ? googleState.client === true : false
@@ -1051,7 +1051,7 @@ Item {
     onFileChanged: reload()
   }
 
-  // First run: create ~/.config/datebook and write an empty store, so the file
+  // First run: create ~/.config/omagenda and write an empty store, so the file
   // the user is told about actually exists before they go looking for it.
   // 0700, because everything that lands in here is personal: the event store,
   // and the cache holding every synced Google event. FileView writes its files
@@ -1072,12 +1072,12 @@ Item {
   Component.onCompleted: root.askGoogle("status")
 
   // --- IPC --------------------------------------------------------------------
-  // `omarchy-shell datebook <method> [args]`. Handy for testing without
+  // `omarchy-shell omagenda <method> [args]`. Handy for testing without
   // clicking, and for scripting the store from outside the shell.
   IpcHandler {
-    target: "datebook"
+    target: "omagenda"
 
-    function toggle(): string { return root.shell && root.shell.toggle("datebook", "") ? "ok" : "no bar widget" }
+    function toggle(): string { return root.shell && root.shell.toggle("io.github.neaxic.omagenda", "") ? "ok" : "no bar widget" }
 
     function status(): string {
       return JSON.stringify({

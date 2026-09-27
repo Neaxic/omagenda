@@ -6,7 +6,7 @@ warning screen and the 100-account cap — and the release itself.
 
 ## The state of it
 
-Datebook syncs Google Calendar both ways at **one button press** — SETTINGS → Calendars → SYNC
+Omagenda syncs Google Calendar both ways at **one button press** — SETTINGS → Calendars → SYNC
 WITH GOOGLE CALENDAR. No API keys, no Cloud project for the user: the OAuth client is
 the plugin's, shipped in `google-app.json`.
 
@@ -15,7 +15,7 @@ writable, two read-only). The consent screen is **published to In production**, 
 refresh tokens last instead of dying every seven days.
 
 Everything below is optional in the sense that the plugin works without it. None of
-it is optional if Datebook gets popular.
+it is optional if Omagenda gets popular.
 
 ## 1. Release to omarchyplugins
 
@@ -25,7 +25,7 @@ it is optional if Datebook gets popular.
 
 The README now states the warning screen and the cap up front, so nobody meets them
 as a surprise. Anyone who objects to the shipped client can point
-`~/.config/datebook/google-client.json` at their own and is then exempt from both.
+`~/.config/omagenda/google-client.json` at their own and is then exempt from both.
 
 ## 2. Watch the 100-account cap
 
@@ -66,7 +66,7 @@ synced calendar, a general settings page, any provider other than Google.
 - **Nothing hot-reloads.** The shell logs "Local plugin changed, reloading" and then
   renders a blank page from stale QML. `omarchy restart shell` before believing any
   visual bug.
-- Driving the popup for screenshots: `omarchy-shell datebook toggle`, then
+- Driving the popup for screenshots: `omarchy-shell omagenda toggle`, then
   `page month|year|detail <id>|compose|calendars`. Check it actually opened with
   `hyprctl layers | grep "namespace: omarchy-keyboard-panel,"` — a bare `toggle`
   closes it if it was already open, which silently gives you a blank capture.

@@ -4,7 +4,7 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Datebook's popup, built to the mockup: a masthead with the month set large and
+// Omagenda's popup, built to the mockup: a masthead with the month set large and
 // a year meter, a hairline month grid with a week gutter, the selected day's
 // agenda, and a footer that pages the months. WEEKS/YEAR switches the grid for
 // twelve miniatures; an event opens a detail page; + and NEW EVENT open the
@@ -13,9 +13,9 @@ import "Model.js" as Model
 // the date maths in Model.js.
 Panel {
   id: root
-  moduleName: "datebook"
-  ipcTarget: "datebook"
-  // The service registers the "datebook" IPC target (it owns toggle + the store),
+  moduleName: "io.github.neaxic.omagenda"
+  ipcTarget: "omagenda"
+  // The service registers the "omagenda" IPC target (it owns toggle + the store),
   // so this widget must not claim it a second time.
   manageIpc: false
 
@@ -53,7 +53,7 @@ Panel {
   property var book: null
   function findBook() {
     if (!book && bar && bar.shell && typeof bar.shell.serviceFor === "function")
-      book = bar.shell.serviceFor("datebook")
+      book = bar.shell.serviceFor("io.github.neaxic.omagenda")
   }
   onBarChanged: findBook()
   Timer {
@@ -96,7 +96,7 @@ Panel {
   }
 
   // The calendars page's rows: every calendar the Google account has, marked with
-  // whether Datebook syncs it and in what colour. The list itself is not
+  // whether Omagenda syncs it and in what colour. The list itself is not
   // persisted, so after a shell restart it is empty until the page asks Google
   // again — the calendars already added are appended so the page is never blank
   // about work the user has done.
@@ -283,7 +283,7 @@ Panel {
       text: root.barGlyph !== "" ? root.barGlyph : Model.barIconGlyph("calendar")
       active: root.todayCount > 0
       activeColor: root.accent
-      tooltipText: root.book ? root.book.tooltip : "Datebook"
+      tooltipText: root.book ? root.book.tooltip : "Omagenda"
       onPressed: function(buttonCode) { root.barPressed(buttonCode) }
     }
   }
@@ -293,7 +293,7 @@ Panel {
     WidgetButton {
       bar: root.bar
       text: (root.barGlyph !== "" ? root.barGlyph + " " : "") + root.barText
-      tooltipText: root.book ? root.book.tooltip : "Datebook"
+      tooltipText: root.book ? root.book.tooltip : "Omagenda"
       onPressed: function(buttonCode) { root.barPressed(buttonCode) }
     }
   }

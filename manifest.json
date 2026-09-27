@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "datebook",
-  "name": "Datebook",
+  "id": "io.github.neaxic.omagenda",
+  "name": "Omagenda",
   "version": "0.1.0",
   "author": "andre",
   "license": "MIT",
@@ -24,7 +24,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Datebook",
+    "displayName": "Omagenda",
     "description": "A rolling three-week calendar that expands to a month, with a day agenda and event pages.",
     "category": "Time",
     "allowMultiple": false,
@@ -81,7 +81,7 @@
       {
         "key": "displayFont",
         "type": "string",
-        "label": "Headline font \u2014 \"auto\" picks an installed grotesque, \"theme\" keeps the bar's font, or name a family",
+        "label": "Headline font — \"auto\" picks an installed grotesque, \"theme\" keeps the bar's font, or name a family",
         "defaultValue": "auto"
       },
       {

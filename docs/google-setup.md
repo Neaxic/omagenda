@@ -3,7 +3,7 @@
 Two-way: your Google events show in the bar, and events you create here land in
 Google.
 
-## If you are using Datebook
+## If you are using Omagenda
 
 Open the popup, press **SETTINGS**, then **Calendars**, then **SYNC WITH GOOGLE CALENDAR**.
 
@@ -11,28 +11,28 @@ Your browser opens once, you allow it, and your primary calendar starts syncing.
 Any other calendar on the account — shared ones, a partner's, a team's — is a row
 on the same page; click it to add or drop it. Each gets its own colour.
 
-There is nothing to copy and no key to find. Datebook's own OAuth client ships
+There is nothing to copy and no key to find. Omagenda's own OAuth client ships
 inside the plugin, so the Google project is the plugin's, not yours.
 
 Two things worth knowing:
 
 - **Google may warn you.** Until Google has finished reviewing the app
   registration, consent is fronted by *"Google hasn't verified this app"*. Choose
-  **Advanced → Go to Datebook**. That screen is about the registration's review
-  status, not about anything Datebook does.
+  **Advanced → Go to Omagenda**. That screen is about the registration's review
+  status, not about anything Omagenda does.
 - **What it asks for.** `calendar.events` (read and write events) and
   `calendar.calendarlist.readonly` (see which calendars exist). Not the blanket
-  `calendar` scope: Datebook cannot create, rename or delete a calendar, only the
+  `calendar` scope: Omagenda cannot create, rename or delete a calendar, only the
   events inside one. Revoke any time from the page's **DISCONNECT**, or at
   <https://myaccount.google.com/permissions>.
 
-Tokens are stored at `~/.config/datebook/google-tokens.json`, `0600`. They never
-leave the machine — there is no Datebook server in the path, the plugin talks to
+Tokens are stored at `~/.config/omagenda/google-tokens.json`, `0600`. They never
+leave the machine — there is no Omagenda server in the path, the plugin talks to
 Google directly.
 
-## If you are shipping Datebook
+## If you are shipping Omagenda
 
-`google-app.json` in the plugin root carries Datebook's own client, so a clone syncs
+`google-app.json` in the plugin root carries Omagenda's own client, so a clone syncs
 out of the box. If you clear it (`bin/set-google-client --clear`), the calendars page
 says the build has no Google client and offers no button — which is the honest state,
 not a bug.
@@ -67,7 +67,7 @@ authorization code from being redeemed.
 Anyone who would rather answer to their own Cloud project can. Make a project with
 the Calendar API on and a **Desktop app** OAuth client — the first half of
 [google-verification.md](google-verification.md) — then write the credentials to
-`~/.config/datebook/google-client.json`:
+`~/.config/omagenda/google-client.json`:
 
 ```json
 {
@@ -83,7 +83,7 @@ client, and the calendars page then says *your own Google project*.
 For a one-off or for testing, the environment wins over both:
 
 ```bash
-DATEBOOK_GOOGLE_CLIENT_ID=… DATEBOOK_GOOGLE_CLIENT_SECRET=… bin/gcal status
+OMAGENDA_GOOGLE_CLIENT_ID=… OMAGENDA_GOOGLE_CLIENT_SECRET=… bin/gcal status
 ```
 
 A client of your own is in Testing mode unless you publish it, so **publish the
@@ -103,27 +103,27 @@ bin/gcal logout              # forget and revoke
 and from the shell:
 
 ```bash
-omarchy-shell datebook connect
-omarchy-shell datebook calendarToggle "family123@group.calendar.google.com"
-omarchy-shell datebook sourceColor "google:you@gmail.com" moss
-omarchy-shell datebook sync true       # true = ignore sync tokens, take it all again
-omarchy-shell datebook syncStatus
-omarchy-shell datebook disconnect
+omarchy-shell omagenda connect
+omarchy-shell omagenda calendarToggle "family123@group.calendar.google.com"
+omarchy-shell omagenda sourceColor "google:you@gmail.com" moss
+omarchy-shell omagenda sync true       # true = ignore sync tokens, take it all again
+omarchy-shell omagenda syncStatus
+omarchy-shell omagenda disconnect
 ```
 
 ## How syncing behaves
 
 - Every ten minutes, and on demand from **SYNC NOW**.
 - Incremental: Google is asked only for what changed, using the sync token it
-  hands back. When a token gets too old Google says so, and Datebook silently
+  hands back. When a token gets too old Google says so, and Omagenda silently
   retakes that calendar in full.
 - The first pass asks for a window — 120 days back, 400 forward — not your whole
   history.
 - Recurring Google events arrive already expanded into instances, so a rule
-  Datebook could not model still shows up correctly.
+  Omagenda could not model still shows up correctly.
 - Writes go straight to Google and the affected calendar is re-synced right
   after, so what you see is what Google stored.
-- Synced events are cached in `~/.config/datebook/cache.json` and merged only for
+- Synced events are cached in `~/.config/omagenda/cache.json` and merged only for
   display. A sync cannot touch your local `events.json`, and a local edit cannot
   touch Google.
 
@@ -137,5 +137,5 @@ omarchy-shell datebook disconnect
 | `Google API 403` | the Calendar API is not enabled on the project |
 | *the browser never came back* | the consent tab was closed, or 5 minutes passed |
 
-`omarchy-shell datebook syncStatus` prints the last error, when the last pass
+`omarchy-shell omagenda syncStatus` prints the last error, when the last pass
 finished, and how many calendars are configured.
