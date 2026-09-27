@@ -4,6 +4,7 @@ A calendar for the Omarchy bar - expanding the design already provided by DHH, t
 The app is vibecoded, but over a few iterations - im already getting benefits from this overhaul, so figured id share it. Fine grain refinement - maybe manually - might come later, now its just HF & POC.
 
 For the google syncing to work, i need various setup on google cloud. You may come across "Google hasn't verified this app", you can safely proceed and chose Advanced → Go to Datebook.
+**There is no server, there is no db, this is all ran locally.**
 Because of the google project limitations, the plugin (currently) only allows for 100 users, ill expand if demand comes, and i might care for the setup a bit more.
 
 **What it asks for:** `calendar.events` (read and write events) and
