@@ -1,96 +1,10 @@
 # Datebook
 
-A calendar for the Omarchy bar, built to a mockup: a rolling grid of the week
-you are in and the two ahead, a year view, a day agenda with detail and compose
-pages, and your own events in a plain JSON file you can read, edit and back up
-yourself. Google Calendar syncs both ways at one button press, or stays off and
-the whole thing is local — no account, no network, no sync daemon.
+A calendar for the Omarchy bar - expanding the design already provided by DHH, this "upgrade" allows syncing with mail clients (only google calendar currently), and a greater overview.
+The app is vibecoded, but over a few iterations - im already getting benefits from this overhaul, so figured id share it. Fine grain refinement - maybe manually - might come later, now its just HF & POC.
 
-The grid rolls rather than paging months: past weeks are gone, not greyed, so
-what you see is the days still in front of you. The furthest week sits back at
-half opacity. MONTH expands it to the whole month when you want the shape of
-one; the year page always opens a month that way.
-
-```
-┌─ Datebook ─────────────────────────────────────────────────┐
-│  ▣  September 26                  ┌───────┬───────┬──────┐ │
-│                                   │ WEEKS │ MONTH │ YEAR │ │
-│         MO    TU    WE    TH    FR    SA    SU    └──────┘ │
-│  ───────────────────────────────────────────────────────── │
-│   39 │ 21  │ 22  │ 23  │ 24  │ 25  │[26]·│ 27      ← now   │
-│      │ ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▶     ← a run   │
-│   40 │ 28 ·│ 29 ··│ 30 │  1  │  2 ·│  3  │  4              │
-│      │ ◀▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬     continued │
-│      │     │     │ ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬     lane 2    │
-│   41 │  5 ·│  6 · │  7 │  8  │  9  │ 10  │ 11      ← faded │
-│  ───────────────────────────────────────────────────────── │
-│  ───────────────────────────────────────────────────────── │
-│ ▌Design review                                           ›  │
-│   14:00 – 15:00 · Studio 2                                  │
-│  ───────────────────────────────────────────────────────── │
-│  «  ‹            SEP – OCT 2026                     ›   »   │
-│  ┌──────────────┐ ┌───────┐ ┌─────────────┐                 │
-│  │ + NEW EVENT  │ │ TODAY │ │ ▣ CALENDARS │                 │
-│  └──────────────┘ └───────┘ └─────────────┘                 │
-└─────────────────────────────────────────────────────────────┘
-```
-
-The agenda states nothing the page has already said: no date heading (the
-masthead names the day and the grid has it outlined), no count line (the bands
-are the count). A day with nothing on it shows no agenda at all — the rule under
-the grid closes it and the pager follows.
-
-Five pages, all inside the one popup:
-
-| Page      | Reached by                        | What it is                                        |
-|-----------|-----------------------------------|---------------------------------------------------|
-| `month`   | the default, or WEEKS / MONTH     | the grid above, plus the selected day's agenda      |
-| `year`    | the YEAR half of the switch       | twelve miniatures, a mark per day, events brighter |
-| `detail`  | the chevron on an event           | one event's facts, with edit and delete            |
-| `compose` | NEW EVENT, or EDIT on an event    | title, date, days, time, length, place, colour, calendar, repeat |
-| `calendars` | CALENDARS, or `c`               | what is being synced, and the one Google button    |
-
-## Where this stands
-
-Picking it back up: **[NEXT.md](NEXT.md)** is the short, ordered version of what
-is left. The rest of this section is the detail behind it.
-
-Written to a mockup over one session on **26 September 2026**, and installed:
-the plugin is enabled in the centre of the bar and everything below works on
-screen. 64 node assertions, `omarchy plugin validate` and `qmllint` clean.
-
-**Working, seen on screen**
-
-- The rolling grid (the week you are in plus two), MONTH expanding it to a whole
-  month, and the YEAR page of twelve miniatures.
-- The day agenda, the event detail page, and the compose form — create, edit and
-  delete, including colours and multi-day runs.
-- Events stored in `~/.config/datebook/events.json`, watched, hand-editable.
-
-**Built but never run against the real service: Google sync**
-
-The whole path is built and running against real Google: OAuth, token refresh,
-incremental pulls, write-through, the sources model, the CALENDAR switch in
-compose, and a CALENDARS page whose one button does the lot.
-
-There is nothing for you to set up. **CALENDARS → SYNC WITH GOOGLE CALENDAR**,
-allow it in the browser, and your primary calendar starts syncing. Every other
-calendar on the account is a row on the same page — click to add or drop it,
-each gets its own colour. That works because the OAuth client ships in the
-plugin, at `google-app.json`, so the Cloud project is Datebook's rather than
-yours.
-
-**Two things to expect, both about the app registration rather than the code:**
-
-- **Google will warn you.** Consent is fronted by *"Google hasn't verified this
-  app"*. Choose **Advanced → Go to Datebook**. Calendar scopes are *sensitive*,
-  so Google requires a review — a domain, a privacy policy, a demo video — and
-  until that clears, everyone sees the screen. It says nothing about what
-  Datebook does with your data, which is: keep it on your machine.
-- **There is a cap of 100 accounts** that may connect while the app is
-  unverified, counted over the project's lifetime. If Datebook is popular enough
-  that you have hit it, the button will fail and this README is out of date —
-  open an issue.
+For the google syncing to work, i need various setup on google cloud. You may come across "Google hasn't verified this app", you can safely proceed and chose Advanced → Go to Datebook.
+Because of the google project limitations, the plugin (currently) only allows for 100 users, ill expand if demand comes, and i might care for the setup a bit more.
 
 **What it asks for:** `calendar.events` (read and write events) and
 `calendar.calendarlist.readonly` (see which calendars exist). Deliberately *not*
@@ -98,49 +12,9 @@ the blanket `calendar` scope — Datebook cannot create, rename or delete a
 calendar, only the events inside one. Revoke any time with **DISCONNECT**, or at
 <https://myaccount.google.com/permissions>.
 
-**On the shipped client.** `google-app.json` holds a client ID and secret in
-plain sight, which is correct rather than a leak: for a *Desktop app* client the
-secret ships in every copy and cannot be confidential, so it identifies the app
-and nothing more. [RFC 8252 §8.5](https://datatracker.ietf.org/doc/html/rfc8252#section-8.5)
-says to expect exactly this, and PKCE — a verifier generated per login and never
-stored — is what actually protects the exchange. Holding those strings lets
-nobody read a calendar; that still takes your consent, on Google's own screen.
-rclone, gcalcli and every desktop app with a Google button ship the same way.
-
-Anyone who would rather answer to their own Cloud project can:
-`~/.config/datebook/google-client.json` takes precedence over the shipped client,
-and `$DATEBOOK_GOOGLE_CLIENT_ID` over both. That also sidesteps the 100-account
-cap entirely, since you are then the only user of your own app. See
-[docs/google-setup.md](docs/google-setup.md).
-
-**[docs/google-verification.md](docs/google-verification.md)** is the maintainer's
-path to removing the warning screen: the public site at
-[gaard.dev](https://gaard.dev), Search Console, a demo video and the scope
-justifications to paste — days to weeks, mostly waiting on Google.
-
-**Not built**
-
-- Repeats on a synced calendar — the compose form refuses them, since Google
-  models recurrence in ways this store does not. Local repeats are unaffected.
-- Editing a single occurrence of a repeat: edit and delete act on the series.
-- Notifications or alerts before an event.
-- An in-panel settings page. Calendars have one (CALENDARS), but everything else
-  is the manifest schema plus `~/.config/omarchy/shell.json`.
-- Any provider other than Google. The sources model is provider-agnostic, so an
-  ICS or CalDAV source would slot in beside `kind: "google"`.
-
 ## Install
 
-Already done on this machine (see above). On a fresh one it is a plain plugin
-directory, so it only needs discovering:
 
-```bash
-omarchy-shell shell rescanPlugins
-omarchy plugin enable datebook center     # or left / right
-omarchy restart shell
-```
-
-To take it back out: `omarchy plugin disable datebook`.
 
 ## Layout
 
