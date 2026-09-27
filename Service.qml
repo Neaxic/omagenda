@@ -508,6 +508,8 @@ Item {
   property string syncError: ""
   property double lastSynced: 0
   property var syncQueue: []
+  // The sync token for the pull in flight, handed over stdin once it starts.
+  property string syncStdin: ""
   property var googleState: ({ client: false, authorized: false })
   property var calendarList: []
 
@@ -565,9 +567,13 @@ Item {
     var entry = remote[job.id]
     var token = job.full ? "" : (entry ? String(entry.syncToken || "") : "")
     var args = [gcalBin, "events", job.calendarId]
-    if (token !== "") args = args.concat(["--sync-token", token])
+    // Passed over stdin, like the write bodies: opaque, but it is per-calendar
+    // state and there is no reason for it to sit in a world-readable argv.
+    if (token !== "") args = args.concat(["--sync-token", "-"])
     else args = args.concat(["--from", syncFromISO + "T00:00:00Z", "--to", syncToISO + "T00:00:00Z"])
+    syncStdin = token
     syncProc.command = args
+    syncProc.stdinEnabled = true
     syncProc.running = false
     syncProc.running = true
   }
@@ -620,6 +626,10 @@ Item {
   // source is re-synced afterwards to pick up whatever Google actually stored.
   property var writeQueue: []
   property bool writing: false
+  // The body of the write in flight, handed to the process over stdin once it
+  // starts. It is held here rather than read back off the queue so the write
+  // does not depend on the queue still being unshifted by the time onStarted runs.
+  property string writeStdin: ""
 
   function queueWrite(job) {
     writeQueue = writeQueue.concat([job])
@@ -630,7 +640,10 @@ Item {
     if (writeQueue.length === 0) { writing = false; return }
     writing = true
     var job = writeQueue[0]
+    writeStdin = String(job.stdin || "")
     writeProc.command = job.command
+    // Reopened for every job: onStarted closes it again to give bin/gcal its EOF.
+    writeProc.stdinEnabled = true
     writeProc.running = false
     writeProc.running = true
   }
@@ -659,10 +672,16 @@ Item {
     if (!source || source.kind !== "google") return "unknown calendar"
     if (source.writable === false) return "that calendar is read-only"
     var body = JSON.stringify(Model.toGoogleEvent(event))
+    // "-" tells bin/gcal to read the body from stdin. The body carries the title,
+    // location and notes, and a process's arguments are world-readable through
+    // /proc/<pid>/cmdline for as long as it runs — which would put private event
+    // content in front of every local user, while everything this plugin stores
+    // on disk is 0600 in a 0700 directory. stdin keeps the two consistent.
     var command = event.remoteId !== ""
-      ? [gcalBin, "patch", source.calendarId, event.remoteId, body]
-      : [gcalBin, "insert", source.calendarId, body]
-    queueWrite({ command: command, sourceId: source.id, calendarId: source.calendarId })
+      ? [gcalBin, "patch", source.calendarId, event.remoteId, "-"]
+      : [gcalBin, "insert", source.calendarId, "-"]
+    queueWrite({ command: command, stdin: body,
+                 sourceId: source.id, calendarId: source.calendarId })
     return ""
   }
 
@@ -925,9 +944,16 @@ Item {
 
   Process {
     id: syncProc
+    stdinEnabled: true
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.finishSync(text)
+    }
+    // Closing stdin is what gives bin/gcal its EOF; without it a helper reading
+    // "-" would wait forever.
+    onStarted: {
+      if (root.syncStdin !== "") syncProc.write(root.syncStdin)
+      syncProc.stdinEnabled = false
     }
     onExited: function(code) {
       if (code !== 0 && root.syncError === "") root.syncError = "sync helper exited " + code
@@ -941,7 +967,12 @@ Item {
   // in silence. waitForEnd means the text is complete by the time we exit.
   Process {
     id: writeProc
+    stdinEnabled: true
     stdout: StdioCollector { id: writeOut; waitForEnd: true }
+    onStarted: {
+      if (root.writeStdin !== "") writeProc.write(root.writeStdin)
+      writeProc.stdinEnabled = false
+    }
     onExited: function(code) {
       var text = String(writeOut.text || "")
       if (code !== 0 && text.trim() === "")

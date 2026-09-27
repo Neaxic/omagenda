@@ -18,6 +18,13 @@ so the QML side can surface the message instead of guessing from an exit code.
   gcal patch  <calId> <id> <json>
   gcal delete <calId> <id>
 
+Anywhere a <json> body or a sync token is taken, "-" means "read it from stdin"
+instead, and that is what the plugin always passes. Arguments are not private:
+/proc/<pid>/cmdline is world-readable, so an event title, location or set of
+notes passed on the command line is readable by every local user for as long as
+the write runs. Everything else the plugin stores is 0600 inside a 0700
+directory, and stdin keeps the request body on the same side of that line.
+
 The OAuth client comes from the first of these that has a client_id:
 
   1. $OMAGENDA_GOOGLE_CLIENT_ID / $OMAGENDA_GOOGLE_CLIENT_SECRET
@@ -80,6 +87,25 @@ def die(message, code=1, **extra):
 
 def emit(payload):
     print(json.dumps(payload))
+
+
+def read_arg(value):
+    """An argument's value, read from stdin instead when the argument is "-".
+
+    See the module docstring: this is how private event content stays out of
+    /proc/<pid>/cmdline. Only "-" reads stdin, so nothing blocks waiting for
+    input that was never going to come.
+    """
+    return sys.stdin.read() if value == "-" else value
+
+
+def read_body(value):
+    """Parse a request body given literally or, for "-", on stdin."""
+    text = read_arg(value)
+    try:
+        return json.loads(text)
+    except ValueError as exc:
+        die("could not parse the event body (%s)" % exc)
 
 
 def read_json(path, default=None):
@@ -462,21 +488,22 @@ def main(argv):
         rest = argv[3:]
         for index in range(0, len(rest) - 1, 2):
             options[rest[index]] = rest[index + 1]
-        return events(argv[2], options.get("--sync-token"),
+        token = options.get("--sync-token")
+        return events(argv[2], read_arg(token).strip() if token else token,
                       options.get("--from"), options.get("--to"))
 
     if command == "insert":
         if len(argv) < 4:
-            die("usage: gcal insert <calendarId> <json>")
+            die("usage: gcal insert <calendarId> <json>|-")
         return emit(api("/calendars/%s/events" % urllib.parse.quote(argv[2]),
-                        method="POST", body=json.loads(argv[3])))
+                        method="POST", body=read_body(argv[3])))
 
     if command == "patch":
         if len(argv) < 5:
-            die("usage: gcal patch <calendarId> <eventId> <json>")
+            die("usage: gcal patch <calendarId> <eventId> <json>|-")
         return emit(api("/calendars/%s/events/%s" % (urllib.parse.quote(argv[2]),
                                                      urllib.parse.quote(argv[3])),
-                        method="PATCH", body=json.loads(argv[4])))
+                        method="PATCH", body=read_body(argv[4])))
 
     if command == "delete":
         if len(argv) < 4:

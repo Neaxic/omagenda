@@ -47,7 +47,7 @@ The short form:
 
 ```bash
 # console: new project, enable the Calendar API, create a Desktop OAuth client
-bin/set-google-client '<id>.apps.googleusercontent.com' 'GOCSPX-<secret>'
+bin/set-google-client '<id>.apps.googleusercontent.com'   # prompts for the secret
 bin/gcal status        # clientOrigin: builtin
 bin/gcal connect       # browser consent, then the calendar list
 ```

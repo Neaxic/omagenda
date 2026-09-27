@@ -52,8 +52,12 @@ Copy the client ID and secret straight into the plugin:
 
 ```bash
 cd ~/.config/omarchy/plugins/omagenda
-bin/set-google-client '<client-id>.apps.googleusercontent.com' 'GOCSPX-<secret>'
+bin/set-google-client '<client-id>.apps.googleusercontent.com'
 ```
+
+It prompts for the secret rather than taking it as an argument, so the secret stays
+out of your shell history. `--from <console-download.json>` reads both straight from
+the file Google gives you.
 
 That writes `google-app.json` without disturbing the comment block, and tells you
 whether it took. Then:
