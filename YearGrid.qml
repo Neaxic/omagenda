@@ -3,7 +3,8 @@ import qs.Commons
 
 // The YEAR half of the toggle: twelve months on the same hairline grid, each a
 // miniature of the month view. A day with events is a solid mark, today is
-// ringed, and clicking a month drops back into the week view on it.
+// ringed in the same accent the month grid lights it with, and clicking a month
+// drops back into the week view on it.
 Grid {
   id: root
 
@@ -99,7 +100,7 @@ Grid {
                     return root.chrome.faint
                   }
                   border.width: modelData.today ? 1 : 0
-                  border.color: root.chrome ? root.chrome.strongEdge : "transparent"
+                  border.color: root.chrome ? root.chrome.todayEdge : "transparent"
                 }
               }
             }

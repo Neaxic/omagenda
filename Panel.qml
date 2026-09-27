@@ -8,8 +8,9 @@ import "Model.js" as Model
 // a year meter, a hairline month grid with a week gutter, the selected day's
 // agenda, and a footer that pages the months. WEEKS/YEAR switches the grid for
 // twelve miniatures; an event opens a detail page; + and NEW EVENT open the
-// compose page. The store, the clock and the shared selection live in
-// Service.qml, the date maths in Model.js.
+// compose page; SETTINGS holds everything the widget can be told, the calendars
+// among it. The store, the clock and the shared selection live in Service.qml,
+// the date maths in Model.js.
 Panel {
   id: root
   moduleName: "datebook"
@@ -129,12 +130,39 @@ Panel {
     }
     return out
   }
+  // What the settings page says about the calendars without opening them.
+  readonly property string calendarsNote: {
+    if (!book) return ""
+    if (!book.googleConnected) return "LOCAL ONLY"
+    var n = 0
+    for (var i = 0; i < book.sources.length; i++)
+      if (book.sources[i].enabled !== false) n++
+    if (n === 0) return "GOOGLE CONNECTED"
+    return "GOOGLE · " + n + (n === 1 ? " CALENDAR" : " CALENDARS")
+  }
+
+  readonly property string eventsPath: {
+    if (!book) return ""
+    var path = String(book.eventsPath)
+    var home = String(book.home)
+    return home !== "" && path.indexOf(home) === 0 ? "~" + path.slice(home.length) : path
+  }
+
   readonly property var yearMonths: book ? book.yearMonths : []
-  readonly property var dayEvents: book ? book.selectedEvents : []
+
+  // Paging moves the day the calendar is measured from but does not select it,
+  // so the grid outlines nothing, the masthead drops its day and the agenda —
+  // which is the selected day's agenda — has nothing to show.
+  readonly property bool daySelected: book ? book.daySelected : true
+  readonly property string highlightISO: daySelected ? selectedISO : ""
+  readonly property var dayEvents: book && daySelected ? book.selectedEvents : []
   readonly property int todayCount: book ? book.todayEvents.length : 0
   readonly property bool use24Hour: book ? book.use24Hour : true
   readonly property bool weekStartsMonday: book ? book.weekStartsMonday : true
   readonly property bool showWeekNumbers: book ? book.showWeekNumbers : true
+  // The week-number column, or nothing when it is turned off — the weekday row
+  // above the grid has to move with it or the letters leave their columns.
+  readonly property real gridGutter: showWeekNumbers ? tokens.gutter : 0
   readonly property string barText: book ? book.barText : ""
   readonly property string barGlyph: Model.barIconGlyph(setting("barIcon", "calendar"))
 
@@ -163,11 +191,24 @@ Panel {
     return book.occurrenceById(openEventId, selectedISO)
   }
 
-  function showPage(name, id) { if (book) book.showPage(name, id || "") }
+  // What a page has to fit in. Measured off the screen and the panel's own cap
+  // rather than off the card — the card's height is derived from the page, so
+  // asking it would tie the two in a knot.
+  readonly property real pageRoom: {
+    var cap = Style.space(900)
+    if (panel.availableCardHeight > 0) cap = Math.min(cap, panel.availableCardHeight)
+    return Math.max(Style.space(200), cap - panel.verticalContentInset - pageLoader.y)
+  }
+
+  function showPage(name, id, from) { if (book) book.showPage(name, id || "", from || "") }
 
   function openDetail(id) { showPage("detail", id) }
 
-  function showCalendars() { showPage("calendars", "") }
+  // Both routes in are kept: the settings page lists the calendars, and `c` still
+  // goes straight there from the grid. Whichever it was, BACK returns to it.
+  function showCalendars(from) { showPage("calendars", "", from || "") }
+
+  function showSettings() { showPage("settings", "") }
 
   function startCompose(id) {
     composeError = ""
@@ -176,7 +217,7 @@ Panel {
 
   function backFromPage() {
     composeError = ""
-    showPage("month", "")
+    showPage(book ? book.uiFrom : "month", "")
   }
 
   // --- actions ------------------------------------------------------------------
@@ -190,6 +231,15 @@ Panel {
   function goToday() { if (book) book.goToday() }
   function stepDay(delta) { if (book) book.select(Model.shiftISO(selectedISO, delta)) }
   function openFile() { if (book) book.openEventsFile() }
+
+  // The settings page writes through the service, which owns the shell.json
+  // entry — the two bar widgets must not each push a half of it.
+  function setOption(key, value) {
+    if (!book) return
+    var values = {}
+    values[key] = value
+    book.persistSettings(values)
+  }
 
   function saveCompose(values) {
     if (!book) return
@@ -290,7 +340,8 @@ Panel {
         else if (key === "<" || key === ",") root.stepMonth(-1)
         else if (key === "y") root.showPage(root.page === "year" ? "month" : "year", "")
         else if (key === "a") root.startCompose("")
-        else if (key === "c") root.showCalendars()
+        else if (key === "c") root.showCalendars("")
+        else if (key === "s" || key === ",") root.showSettings()
         else if (key === "o") root.openFile()
       }
 
@@ -304,7 +355,7 @@ Panel {
           width: parent.width
           chrome: tokens
           title: root.page === "year" ? String(root.viewYear) : Model.MONTH_NAMES[root.viewMonth]
-          trailing: root.page === "year" ? "" : String(root.selectedDay)
+          trailing: root.page === "year" || !root.daySelected ? "" : String(root.selectedDay)
           onSlabClicked: root.goToday()
           trailingControl: Component {
             SegmentedToggle {
@@ -324,11 +375,10 @@ Panel {
           }
         }
 
-        Item { width: 1; height: Style.space(19) }
-
-        Rectangle { width: parent.width; height: 1; color: tokens.rule }
-
-        Item { width: 1; height: Style.space(25) }
+        // No rule under the masthead: the weekday letters and the grid's own top
+        // rule already open the calendar, and a divider on top of that was one
+        // line saying what the next line says.
+        Item { width: 1; height: Style.space(22) }
 
         // --- weekday row and the WEEKS / YEAR switch -------------------------
         // Weekday letters only — the year page has nothing to put here, so the
@@ -342,10 +392,10 @@ Panel {
           // could not do with the switch sharing the row.
           Row {
             id: weekdayRow
-            x: tokens.gutter
+            x: root.gridGutter
             height: parent.height
             visible: root.page === "month"
-            readonly property real slot: Math.max(1, (parent.width - tokens.gutter) / 7)
+            readonly property real slot: Math.max(1, (parent.width - root.gridGutter) / 7)
 
             Repeater {
               model: Model.weekdayPairs(root.weekStartsMonday)
@@ -379,6 +429,7 @@ Panel {
             if (root.page === "detail") return detailPage
             if (root.page === "compose") return composePage
             if (root.page === "calendars") return calendarsPage
+            if (root.page === "settings") return settingsPage
             return monthPage
           }
         }
@@ -397,7 +448,8 @@ Panel {
         width: parent.width
         chrome: tokens
         weeks: root.weeks
-        selectedISO: root.selectedISO
+        selectedISO: root.highlightISO
+        showWeekNumbers: root.showWeekNumbers
         // A month's last row is part of the month, not the far end of a window.
         fadeLastWeek: root.gridMode === "weeks"
         onDaySelected: function(iso) { root.selectDay(iso) }
@@ -521,27 +573,38 @@ Panel {
 
       Item { width: 1; height: Style.space(25) }
 
-      Row {
-        spacing: Style.space(10)
+      // The two things you do to the calendar sit together on the left; the way
+      // out of it goes to the far edge, where it is not in the way of either.
+      Item {
+        width: parent.width
+        height: newEventRow.implicitHeight
 
-        OutlineButton {
-          chrome: tokens
-          glyph: "\u{F0415}"                         // plus
-          label: "NEW EVENT"
-          onClicked: root.startCompose("")
+        Row {
+          id: newEventRow
+          anchors.left: parent.left
+          spacing: Style.space(10)
+
+          OutlineButton {
+            chrome: tokens
+            glyph: "\u{F0415}"                       // plus
+            label: "NEW EVENT"
+            onClicked: root.startCompose("")
+          }
+
+          OutlineButton {
+            chrome: tokens
+            label: "TODAY"
+            onClicked: root.goToday()
+          }
         }
 
         OutlineButton {
+          anchors.right: parent.right
+          anchors.verticalCenter: newEventRow.verticalCenter
           chrome: tokens
-          label: "TODAY"
-          onClicked: root.goToday()
-        }
-
-        OutlineButton {
-          chrome: tokens
-          glyph: "\u{F00ED}"                       // calendar-multiple
-          label: "CALENDARS"
-          onClicked: root.showCalendars()
+          glyph: "\u{F0493}"                        // cog
+          label: "SETTINGS"
+          onClicked: root.showSettings()
         }
       }
     }
@@ -647,6 +710,8 @@ Panel {
     EventCompose {
       chrome: tokens
       dateISO: root.selectedISO
+      todayISO: root.todayISO
+      mondayFirst: root.weekStartsMonday
       editingId: root.openEventId
       error: root.composeError
       sources: root.sourceOptions
@@ -660,6 +725,43 @@ Panel {
         focusTitle()
       }
       Component.onDestruction: root.textFocus = false
+    }
+  }
+
+  // --- the settings page ------------------------------------------------------------
+  Component {
+    id: settingsPage
+
+    Flickable {
+      // The one page that can outgrow the card on a tight screen or a large
+      // spacing scale: it scrolls rather than losing its last row.
+      implicitHeight: Math.min(body.implicitHeight, root.pageRoom)
+      height: implicitHeight
+      contentHeight: body.implicitHeight
+      clip: true
+      boundsBehavior: Flickable.StopAtBounds
+
+      Settings {
+        id: body
+        width: parent.width
+        chrome: tokens
+        barMode: root.book ? root.book.barMode : "next"
+        barIcon: String(root.setting("barIcon", "calendar"))
+        barMaxTitle: root.book ? root.book.barMaxTitle : 18
+        displayFont: String(root.setting("displayFont", "auto"))
+        displayFamily: root.displayFamily
+        weekStartsMonday: root.weekStartsMonday
+        showWeekNumbers: root.showWeekNumbers
+        weeksShown: root.book ? root.book.weeksShown : 3
+        eventPalette: root.book ? root.book.eventPalette : "spread"
+        use24Hour: root.use24Hour
+        calendarsNote: root.calendarsNote
+        eventsPath: root.eventsPath
+        onOptionChanged: function(key, value) { root.setOption(key, value) }
+        onCalendarsRequested: root.showCalendars("settings")
+        onEventsFileRequested: root.openFile()
+        onClosed: root.backFromPage()
+      }
     }
   }
 

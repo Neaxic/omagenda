@@ -5,7 +5,7 @@ Google.
 
 ## If you are using Datebook
 
-Open the popup, press **CALENDARS**, press **SYNC WITH GOOGLE CALENDAR**.
+Open the popup, press **SETTINGS**, then **Calendars**, then **SYNC WITH GOOGLE CALENDAR**.
 
 Your browser opens once, you allow it, and your primary calendar starts syncing.
 Any other calendar on the account — shared ones, a partner's, a team's — is a row

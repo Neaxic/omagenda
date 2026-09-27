@@ -132,6 +132,11 @@ Item {
   property string anchorISO: Model.startOfWeek(Model.todayISO(), true)
   property string selectedISO: Model.todayISO()
 
+  // Whether that day is one you actually picked. Paging keeps `selectedISO`
+  // moving — the masthead needs a month, a new event needs a date — but a day
+  // the pager merely landed on is not a selection, and is not drawn as one.
+  property bool daySelected: true
+
   // "weeks" is the rolling window; "month" expands it to the whole month the
   // selected day sits in. Not persisted: the popup opens on the window again,
   // which is the view that answers "what is coming".
@@ -171,12 +176,15 @@ Item {
     return true
   }
 
-  // Paging carries the selection with it, so the masthead never names a day the
-  // grid has scrolled past.
+  // Paging carries the day with it, so the masthead never names a day the grid
+  // has scrolled past — but it does not carry the selection: arriving in
+  // another month with one of its days already outlined claims a choice nobody
+  // made.
   function stepWeeks(delta) {
     var steps = Math.round(delta) * 7
     anchorISO = Model.shiftISO(anchorISO, steps)
     selectedISO = Model.shiftISO(selectedISO, steps)
+    daySelected = false
   }
 
   function stepYear(delta) {
@@ -188,13 +196,18 @@ Item {
 
   // Which page the popup is on. It lives here with the rest of the view state so
   // both monitors agree, and so the pages can be driven over IPC for testing.
-  property string uiPage: "month"      // month | year | detail | compose | calendars
+  property string uiPage: "month"      // month | year | detail | compose | calendars | settings
   property string uiEventId: ""
+  // Where closing the current page goes back to. Calendars is reachable both
+  // from the footer and from the settings page, and landing on the calendar
+  // after coming from settings would throw away where you were.
+  property string uiFrom: "month"
 
-  function showPage(name, id) {
+  function showPage(name, id, from) {
     var page = String(name || "month")
-    if (["month", "year", "detail", "compose", "calendars"].indexOf(page) === -1) return false
+    if (["month", "year", "detail", "compose", "calendars", "settings"].indexOf(page) === -1) return false
     uiEventId = id === undefined || id === null ? "" : String(id)
+    uiFrom = from === undefined || from === null || from === "" ? "month" : String(from)
     uiPage = page
     // Arriving on the calendars page re-asks Google what exists, so a calendar
     // shared with the account since last time is simply there. It belongs here
@@ -205,28 +218,34 @@ Item {
   }
 
   function showMonth(year, month) {
-    select(Model.toISO(new Date(year, month, 1)))
+    return moveTo(Model.toISO(new Date(year, month, 1)), false)
   }
 
   // Keeps the day of the month where it can, so paging months from the 26th
   // lands on the 26th rather than snapping to the 1st.
   function stepMonth(delta) {
-    select(Model.addMonthsToISO(selectedISO, delta))
+    return moveTo(Model.addMonthsToISO(selectedISO, delta), false)
   }
 
-  function select(iso) {
+  // Where everything else is measured from. `deliberate` is the whole
+  // difference between a day you picked and a day the pager landed on.
+  function moveTo(iso, deliberate) {
     if (!Model.isISODate(iso)) return false
     selectedISO = iso
+    daySelected = deliberate !== false
     // Only re-anchor when the day is off the window; clicking inside it must
     // not make the grid jump under the pointer.
     if (!inWindow(iso)) showWeekOf(iso)
     return true
   }
 
+  function select(iso) { return moveTo(iso, true) }
+
   function goToday() {
     tick()
     showWeekOf(todayISO)
     selectedISO = todayISO
+    daySelected = true
   }
 
   // --- sources ------------------------------------------------------------------
@@ -275,6 +294,9 @@ Item {
         if (event.color !== "none") { painted.push(event); continue }
         var copy = {}
         for (var key in event) copy[key] = event[key]
+        // What it is drawn in, without losing what it actually carries: the
+        // compose form edits the event's own colour, not its calendar's.
+        copy.ownColor = event.color
         copy.color = tint
         painted.push(copy)
       }
@@ -435,7 +457,12 @@ Item {
       // Keep what the form does not ask about (notes, an until bound).
       raw.notes = existing.notes
       raw.until = existing.until
-      if (existing.source === target) raw.remoteId = existing.remoteId
+      if (existing.source === target) {
+        raw.remoteId = existing.remoteId
+        // The colour id Google has on it, so the patch can tell "unchanged"
+        // from "cleared" — without it, picking "no colour" wrote nothing.
+        raw.colorId = existing.colorId
+      }
     }
 
     var event = Model.normalizeEvent(raw)
@@ -615,6 +642,9 @@ Item {
       var reply = {}
       try { reply = JSON.parse(String(text || "{}")) } catch (e) { reply = {} }
       if (reply.error) syncError = String(reply.error)
+      // Nothing parseable came back, so the write did not happen: pulling the
+      // calendar now would only confirm the event is still missing.
+      else if (String(text || "").trim() === "") { /* onExited said why */ }
       else if (job.sourceId) {
         // Pull the source so the cache matches what Google now holds.
         syncQueue = syncQueue.concat([{ id: job.sourceId, calendarId: job.calendarId, full: false }])
@@ -844,7 +874,7 @@ Item {
       var entry = remote[id]
       out[id] = { syncToken: entry.syncToken || "", events: entry.events || [] }
     }
-    cacheFile.setText(JSON.stringify({ version: 1, sources: out }) + "\n")
+    cacheFile.setText(JSON.stringify({ version: cacheVersion, sources: out }) + "\n")
   }
 
   function loadSources(raw) {
@@ -865,10 +895,17 @@ Item {
     sources = out
   }
 
+  // Version 2 is the first cache whose events carry Google's colour id. A cache
+  // written before it has none, and an incremental sync would never re-fetch an
+  // event that has not changed — so its sync tokens are dropped and the next
+  // sync is a full one, which is what fills the colours in.
+  readonly property int cacheVersion: 2
+
   function loadCache(raw) {
     var data
     try { data = JSON.parse(String(raw || "")) } catch (e) { data = null }
     var stored = data && data.sources ? data.sources : {}
+    var stale = Math.round(Number(data && data.version) || 1) < cacheVersion
     var out = {}
     for (var id in stored) {
       var entry = stored[id] || {}
@@ -878,7 +915,10 @@ Item {
         var parsed = Model.normalizeEvent(list[i])
         if (parsed) { parsed.id = String(list[i].id || parsed.id); events.push(parsed) }
       }
-      out[id] = { syncToken: String(entry.syncToken || ""), events: Model.sortEvents(events) }
+      out[id] = {
+        syncToken: stale ? "" : String(entry.syncToken || ""),
+        events: Model.sortEvents(events)
+      }
     }
     remote = out
   }
@@ -894,11 +934,19 @@ Item {
     }
   }
 
+  // Settled in onExited rather than onStreamFinished, because that is the one
+  // signal guaranteed to arrive: a helper that cannot start at all (no python3
+  // on the box) closes no stream, and without this the queue kept `writing`
+  // true for the rest of the session and every later edit piled up behind it
+  // in silence. waitForEnd means the text is complete by the time we exit.
   Process {
     id: writeProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.finishWrite(text)
+    stdout: StdioCollector { id: writeOut; waitForEnd: true }
+    onExited: function(code) {
+      var text = String(writeOut.text || "")
+      if (code !== 0 && text.trim() === "")
+        root.syncError = "could not run bin/gcal (exit " + code + ") — is python3 installed?"
+      root.finishWrite(text)
     }
   }
 
@@ -1035,6 +1083,7 @@ Item {
       return JSON.stringify({
         today: root.todayISO,
         selected: root.selectedISO,
+        daySelected: root.daySelected,
         grid: root.gridMode,
         sources: root.sources.length,
         synced: root.lastSynced,
@@ -1099,9 +1148,10 @@ Item {
 
     function today(): string { root.goToday(); return root.todayISO }
 
-    // month | year | detail <id> | compose [id] | calendars
+    // month | year | detail <id> | compose [id] | calendars | settings
     function page(name: string, id: string): string {
-      return root.showPage(name, id) ? root.uiPage : "expected month|year|detail|compose|calendars"
+      return root.showPage(name, id) ? root.uiPage
+        : "expected month|year|detail|compose|calendars|settings"
     }
 
     function barMode(value: string): string {

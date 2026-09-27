@@ -67,7 +67,7 @@ On the unverified-app screen choose **Advanced → Go to Datebook**. That screen
 about the registration's review status, not about anything Datebook does — it is
 exactly what Part 2 removes.
 
-Then open the bar popup → **CALENDARS**. Your calendars should be listed.
+Then open the bar popup → **SETTINGS → Calendars**. Your calendars should be listed.
 
 ### 1.4 Publish to production
 

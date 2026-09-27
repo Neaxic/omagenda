@@ -49,10 +49,9 @@ Item {
   }
 
   // --- month and day ------------------------------------------------------------
-  // Top-aligned rather than baseline-aligned, as in the mockup: the smaller
-  // number hangs off the top of the word.
-  // Anchored rather than put in a Row: the smaller number hangs from the top of
-  // the word, which a positioner would fight.
+  // The two sit on one baseline, so the day reads as part of the same line as
+  // the month rather than as a number hung off the top of it. Anchored rather
+  // than put in a Row: a positioner has no baseline to align to.
   Item {
     id: headline
     anchors.left: slab.right
@@ -78,8 +77,7 @@ Item {
       id: dayText
       anchors.left: monthText.right
       anchors.leftMargin: Style.space(20)
-      anchors.top: monthText.top
-      anchors.topMargin: Style.space(3)
+      anchors.baseline: monthText.baseline
       text: root.trailing
       color: root.chrome ? root.chrome.dim : "transparent"
       font.family: root.chrome ? root.chrome.displayFamily : "monospace"

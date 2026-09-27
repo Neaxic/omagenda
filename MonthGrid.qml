@@ -3,7 +3,7 @@ import qs.Commons
 
 // The month grid from the mockup: a week-number gutter, seven columns, hairline
 // rules between rows and columns, day numbers set left and centred in their row,
-// event dots at the bottom-left and a today dot at the top-right. Nothing here
+// event dots at the bottom-left and today's cell lit from within. Nothing here
 // does date arithmetic — Model.monthWeeks() hands it finished rows.
 Column {
   id: root
@@ -11,6 +11,7 @@ Column {
   property var chrome: null
   property var weeks: []            // Model.weeksFrom()
   property string selectedISO: ""
+  property bool showWeekNumbers: true
 
   // The last week of a rolling window is the furthest ahead, so it sits back a
   // little rather than competing with the week you are in.
@@ -20,7 +21,7 @@ Column {
   signal daySelected(string iso)
   signal dayActivated(string iso)   // double click: straight into the day
 
-  readonly property real gutterWidth: chrome ? chrome.gutter : 33
+  readonly property real gutterWidth: showWeekNumbers ? (chrome ? chrome.gutter : 33) : 0
   readonly property real cellWidth: (width - gutterWidth) / 7
 
   // Multi-day events are drawn as bars across the days they cover, stacked in
@@ -75,6 +76,7 @@ Column {
 
       Text {
         x: 0
+        visible: root.showWeekNumbers
         opacity: weekRow.fade
         width: root.gutterWidth
         height: parent.height
@@ -150,6 +152,17 @@ Column {
               border.color: root.chrome ? root.chrome.strongEdge : "transparent"
             }
 
+            // Today: the cell itself lights up — an accent ring and the faintest
+            // tint — drawn over the selection so the two stay legible on the day
+            // they coincide, which a shared neutral outline could not do.
+            Rectangle {
+              anchors.fill: parent
+              visible: dayCell.day.today
+              color: root.chrome ? root.chrome.todayGlow : "transparent"
+              border.width: 1
+              border.color: root.chrome ? root.chrome.todayEdge : "transparent"
+            }
+
             Text {
               x: root.chrome ? root.chrome.cellPad : 12
               anchors.verticalCenter: parent.verticalCenter
@@ -194,20 +207,6 @@ Column {
                   opacity: dayCell.day.inMonth ? 1.0 : 0.45
                 }
               }
-            }
-
-            // Today: a filled square at the top right, kept even under the
-            // selection outline so "today" and "selected" stay distinguishable.
-            Rectangle {
-              visible: dayCell.day.today
-              width: root.chrome ? root.chrome.todayDot : 6
-              height: width
-              radius: width / 2
-              anchors.right: parent.right
-              anchors.top: parent.top
-              anchors.rightMargin: Style.space(13)
-              anchors.topMargin: Style.space(13)
-              color: root.chrome ? root.chrome.headline : "transparent"
             }
 
             MouseArea {

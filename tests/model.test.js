@@ -556,6 +556,57 @@ test("events round-trip back to Google's shape", () => {
   assert.ok(/T10:00:00/.test(open.end.dateTime))
 })
 
+test("a Google colour is read, and written back only when it changed", () => {
+  const sky = M.parseGoogleEvent(gcalAllDay({ colorId: "7" }), "work")
+  assert.equal(sky.color, "sky")
+  assert.equal(sky.colorId, "7")
+  // Saving it untouched must not mention the colour at all: a patch that names
+  // it would overwrite whatever Google has.
+  assert.equal("colorId" in M.toGoogleEvent(sky), false)
+
+  const repainted = Object.assign({}, sky, { color: "plum" })
+  assert.equal(M.toGoogleEvent(repainted).colorId, "3")
+
+  // "None" means the calendar's own colour, so an event that had one is cleared
+  // — null being how a patch empties a field.
+  const cleared = Object.assign({}, sky, { color: "none" })
+  assert.equal(M.toGoogleEvent(cleared).colorId, null)
+
+  // A brand new event carries its colour out, and nothing when it has none.
+  assert.equal(M.toGoogleEvent(M.normalizeEvent({ title: "N", date: "2026-09-28", color: "moss" })).colorId, "10")
+  assert.equal("colorId" in M.toGoogleEvent(M.normalizeEvent({ title: "N", date: "2026-09-28" })), false)
+})
+
+test("Google's colours this palette cannot name are left alone", () => {
+  // Graphite has no slot here, so the event shows its calendar's colour — and
+  // an edit that does not touch the colour must not clear it in Google.
+  const grey = M.parseGoogleEvent(gcalAllDay({ colorId: "8" }), "work")
+  assert.equal(grey.color, "none")
+  assert.equal(grey.colorId, "8")
+  assert.equal("colorId" in M.toGoogleEvent(grey), false)
+  // Every id Google defines maps to a slot, and the six we write round-trip.
+  const slots = ["clay", "sand", "moss", "sky", "slate", "plum"]
+  slots.forEach(slot => assert.equal(M.googleColorSlot(M.googleColorId(slot)), slot))
+  assert.equal(M.googleColorId("none"), "")
+  assert.equal(M.googleColorSlot(""), "none")
+  assert.equal(M.googleColorSlot("99"), "none")
+})
+
+test("an occurrence carries the event's own colour beside the one it is drawn in", () => {
+  // What the service hands the form for a synced event its calendar has tinted.
+  const painted = Object.assign(M.parseGoogleEvent(gcalAllDay({ start: { date: "2026-09-26" },
+                                                               end: { date: "2026-09-27" } }), "work"),
+                                { color: "clay", ownColor: "none" })
+  const on = M.eventsOn([painted], "2026-09-26")[0]
+  assert.equal(on.color, "clay")        // drawn in the calendar's colour
+  assert.equal(on.ownColor, "none")     // but carries none of its own
+  assert.equal(on.colorId, "")
+  // A local event has nothing between the two.
+  const mine = M.eventsOn([M.normalizeEvent({ id: "l", title: "Mine", date: "2026-09-26", color: "sky" })], "2026-09-26")[0]
+  assert.equal(mine.color, "sky")
+  assert.equal(mine.ownColor, "sky")
+})
+
 test("a synced event survives every read path", () => {
   // Regression: eventsOn built a field only for non-local events, so a typo in
   // that branch was invisible to every test using the local store.

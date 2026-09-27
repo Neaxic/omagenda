@@ -41,6 +41,21 @@ var EVENT_COLORS = [
   { key: "plum", token: "magenta", fallback: "#a98bbd", slot: 5 }
 ]
 
+// Google's eleven event colours, onto Datebook's six slots. The ids are fixed by
+// the API (a calendar's own colour is a different set), and the pairs below are
+// the nearest hue in each direction, so a colour survives a round trip:
+// clay 11 Tomato · sand 5 Banana · moss 10 Basil · sky 7 Peacock ·
+// slate 9 Blueberry · plum 3 Grape. Graphite has no slot here — it maps to
+// "none", and an event wearing it keeps it unless you pick another colour.
+var GOOGLE_COLOR_IDS = {
+  clay: "11", sand: "5", moss: "10", sky: "7", slate: "9", plum: "3"
+}
+
+var GOOGLE_COLOR_SLOTS = {
+  "1": "slate",  "2": "moss",  "3": "plum", "4": "clay",  "5": "sand", "6": "clay",
+  "7": "sky",    "8": "none",  "9": "slate", "10": "moss", "11": "clay"
+}
+
 // Stores written before the palette was named this way.
 var COLOR_ALIASES = {
   red: "clay", yellow: "sand", green: "moss",
@@ -363,96 +378,6 @@ function yearMonths(year, options) {
   return months
 }
 
-// The Monday (or Sunday) that opens the week `iso` falls in.
-function startOfWeek(iso, mondayFirst) {
-  var date = fromISO(iso)
-  if (!date) return iso
-  var dow = date.getDay()
-  var back = mondayFirst !== false ? (dow + 6) % 7 : dow
-  return shiftISO(iso, -back)
-}
-
-// The rolling grid: `count` weeks running forward from the week `startISO`
-// opens. Same row shape as monthWeeks() — { week, days: [cell x7] } — so the
-// grid delegate does not care which of the two built it. `inMonth` is measured
-// against the month the window starts in, which is what dims the days that have
-// rolled over into the next one.
-function weeksFrom(startISO, count, options) {
-  var o = options || {}
-  var mondayFirst = o.mondayFirst !== false
-  var today = o.todayISO || todayISO()
-  var marks = o.marks || {}
-  var total = Math.max(1, Math.min(12, Math.round(count || 3)))
-
-  var first = startOfWeek(startISO, mondayFirst)
-  var anchorDate = fromISO(o.monthOf || first)
-  var anchorMonth = anchorDate ? anchorDate.getMonth() : -1
-  var anchorYear = anchorDate ? anchorDate.getFullYear() : -1
-
-  var weeks = []
-  for (var w = 0; w < total; w++) {
-    var days = []
-    for (var d = 0; d < 7; d++) {
-      var iso = shiftISO(first, w * 7 + d)
-      var date = fromISO(iso)
-      if (!date) continue
-      var dow = date.getDay()
-      var mark = marks[iso]
-      days.push({
-        iso: iso,
-        day: date.getDate(),
-        inMonth: date.getMonth() === anchorMonth && date.getFullYear() === anchorYear,
-        today: iso === today,
-        weekend: dow === 0 || dow === 6,
-        count: mark ? mark.count : 0,
-        colors: mark ? mark.colors : []
-      })
-    }
-    var weekStart = shiftISO(first, w * 7)
-    weeks.push({
-      week: isoWeek(fromISO(weekStart)),
-      start: weekStart,
-      days: days,
-      segments: o.events ? weekSegments(o.events, weekStart) : []
-    })
-  }
-  return weeks
-}
-
-// What the pager under a rolling window says: one month when the window sits
-// inside one, otherwise the two it spans.
-function windowLabel(startISO, endISO) {
-  var from = fromISO(startISO), to = fromISO(endISO)
-  if (!from) return ""
-  if (!to) return upperMonth(from.getFullYear(), from.getMonth())
-  if (from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth())
-    return upperMonth(from.getFullYear(), from.getMonth())
-  var left = MONTH_SHORT[from.getMonth()].toUpperCase()
-  var right = MONTH_SHORT[to.getMonth()].toUpperCase()
-  if (from.getFullYear() !== to.getFullYear())
-    return left + " " + from.getFullYear() + " – " + right + " " + to.getFullYear()
-  return left + " – " + right + " " + to.getFullYear()
-}
-
-// The year view: twelve months, each with its own weeks, for the mini grids.
-function yearMonths(year, options) {
-  var months = []
-  for (var m = 0; m < 12; m++) {
-    months.push({
-      month: m,
-      name: MONTH_NAMES[m],
-      short: MONTH_SHORT[m],
-      weeks: monthWeeks(year, m, {
-        mondayFirst: (options || {}).mondayFirst !== false,
-        showAdjacentMonths: false,
-        todayISO: (options || {}).todayISO,
-        marks: (options || {}).marks || {}
-      })
-    })
-  }
-  return months
-}
-
 // The theme's colors.toml, as { token: "#rrggbb" }.
 function parsePalette(text) {
   var out = {}
@@ -460,6 +385,16 @@ function parsePalette(text) {
   var m
   while ((m = re.exec(String(text || ""))) !== null) out[m[1]] = m[2].toLowerCase()
   return out
+}
+
+// The colour id Google should carry for one of our slots, "" for none.
+function googleColorId(key) {
+  return GOOGLE_COLOR_IDS[normalizeColor(key)] || ""
+}
+
+// And back: the slot an event with that colour id belongs in.
+function googleColorSlot(id) {
+  return GOOGLE_COLOR_SLOTS[trim(id)] || "none"
 }
 
 function normalizeColor(value) {
@@ -603,6 +538,10 @@ function normalizeEvent(raw) {
     source: trim(raw.source) || "local",
     remoteId: trim(raw.remoteId),
     etag: trim(raw.etag),
+    // The colour id the remote event actually carries, kept so writing back
+    // only touches the colour when it really changed — Google has colours this
+    // palette has no name for, and an edit here must not quietly clear one.
+    colorId: trim(raw.colorId),
     repeat: normalizeRepeat(raw.repeat),
     // "" = forever. Only meaningful with a repeat.
     until: isISODate(raw.until) && fromISO(raw.until) ? trim(raw.until) : ""
@@ -630,7 +569,7 @@ function ensureIds(events, randomFn) {
       id: id, title: e.title, date: e.date, days: e.days, time: e.time,
       durationMin: e.durationMin, notes: e.notes, location: e.location,
       color: e.color, source: e.source, remoteId: e.remoteId, etag: e.etag,
-      repeat: e.repeat, until: e.until
+      colorId: e.colorId, repeat: e.repeat, until: e.until
     })
   }
   return out
@@ -747,9 +686,11 @@ function parseGoogleEvent(raw, sourceId) {
     durationMin: durationMin,
     location: trim(raw.location),
     notes: trim(raw.description),
+    color: googleColorSlot(raw.colorId),
     source: trim(sourceId),
     remoteId: trim(raw.id),
-    etag: trim(raw.etag)
+    etag: trim(raw.etag),
+    colorId: trim(raw.colorId)
   })
 }
 
@@ -790,6 +731,14 @@ function toGoogleEvent(event) {
     location: event.location || "",
     description: event.notes || ""
   }
+  // Only when it changed: an unchanged colour is left out of the patch, so a
+  // Graphite or Tangerine event keeps the colour Google gave it. Picking "none"
+  // on an event that had one sends null, which is how a patch clears a field.
+  if (googleColorSlot(event.colorId) !== normalizeColor(event.color)) {
+    var wanted = googleColorId(event.color)
+    out.colorId = wanted === "" ? null : wanted
+  }
+
   var span = Math.max(1, Math.round(event.days || 1))
   if (!event.time) {
     out.start = { date: event.date }
@@ -889,7 +838,12 @@ function eventsOn(events, iso) {
     out.push({
       id: e.id, title: e.title, date: e.date, iso: iso, time: e.time,
       durationMin: e.durationMin, notes: e.notes, location: e.location, color: e.color,
-      source: e.source, remoteId: e.remoteId, etag: e.etag,
+      source: e.source, remoteId: e.remoteId, etag: e.etag, colorId: e.colorId,
+      // `color` is what this day is drawn in, which for a synced event with no
+      // colour of its own is its calendar's. `ownColor` is what the event
+      // actually carries, and it is what the compose form must edit — otherwise
+      // opening an event and saving it pins the calendar's tint onto it.
+      ownColor: e.ownColor === undefined ? e.color : e.ownColor,
       repeat: e.repeat, until: e.until,
       // Where this day sits in the run: the grid draws caps from it, and the
       // agenda says "day 2 of 4" rather than repeating the start time.
@@ -1275,6 +1229,8 @@ if (typeof module !== "undefined") {
     localISO: localISO,
     mergeSources: mergeSources,
     normalizeColor: normalizeColor,
+    googleColorId: googleColorId,
+    googleColorSlot: googleColorSlot,
     colorHex: colorHex,
     colorEntry: colorEntry,
     hexToHsl: hexToHsl,

@@ -6,7 +6,7 @@ warning screen and the 100-account cap — and the release itself.
 
 ## The state of it
 
-Datebook syncs Google Calendar both ways at **one button press** — CALENDARS → SYNC
+Datebook syncs Google Calendar both ways at **one button press** — SETTINGS → Calendars → SYNC
 WITH GOOGLE CALENDAR. No API keys, no Cloud project for the user: the OAuth client is
 the plugin's, shipped in `google-app.json`.
 

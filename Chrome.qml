@@ -47,6 +47,13 @@ QtObject {
   readonly property color meter: Util.alpha(foreground, 0.89)
   readonly property color onInverted: Color.popups.background
 
+  // Today is the cell lighting up, not a dot in its corner: a ring and the
+  // faintest tint inside it. Both are the theme accent rather than another
+  // level of the ink ladder, so today never reads as a second selection when
+  // the two sit side by side — or as none at all when they land on one day.
+  readonly property color todayEdge: Util.alpha(accent, 0.8)
+  readonly property color todayGlow: Util.alpha(accent, 0.07)
+
   // An event's ink: its own colour when it has one, the ordinary body ink when
   // it does not, so an uncoloured calendar looks exactly as it did before.
   readonly property bool darkSurface: onInverted.hslLightness < 0.5
@@ -72,7 +79,6 @@ QtObject {
   readonly property int segment: Style.space(28)         // the WEEKS/YEAR toggle
   readonly property int eventRow: Style.space(60)
   readonly property int dot: Style.space(4)
-  readonly property int todayDot: Style.space(6)
 
   // --- type -------------------------------------------------------------------
   // The mockup's 46px is set in a tighter face than anything normally installed,

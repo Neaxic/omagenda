@@ -5,13 +5,24 @@ import "Model.js" as Model
 // New event / edit event. Deliberately flat: labelled rules rather than boxes,
 // a repeat switch built from the same segmented control as WEEKS/YEAR, and the
 // two actions as outline buttons.
+//
+// The date can be typed or picked: the calendar glyph in the DATE field opens a
+// month under the row, and picking a day writes into the same field you would
+// otherwise type into. Neither way is privileged, and the picker stays shut
+// unless it is asked for.
 Column {
   id: root
 
   property var chrome: null
   property string dateISO: ""
+  property string todayISO: ""
+  property bool mondayFirst: true
   property string editingId: ""      // "" while creating
   property string error: ""
+
+  // The picker is opt-in and remembers nothing: it opens on whatever the field
+  // says and closes the moment a day is chosen.
+  property bool pickerOpen: false
 
   // { title, date, days, time, durationMin, location, color, repeat }
   signal saved(var values)
@@ -38,6 +49,7 @@ Column {
       repeatValue = "none"
       colorValue = "none"
       sourceValue = "local"
+      pickerOpen = false
       return
     }
     // The event's own date, not the day the grid happens to be sitting on.
@@ -48,8 +60,10 @@ Column {
     lengthField.text = occurrence.durationMin > 0 ? String(occurrence.durationMin) : ""
     placeField.text = occurrence.location
     repeatValue = occurrence.repeat
-    colorValue = occurrence.color
+    // The event's own colour, not the calendar tint it is drawn in.
+    colorValue = occurrence.ownColor === undefined ? occurrence.color : occurrence.ownColor
     sourceValue = occurrence.source || "local"
+    pickerOpen = false
   }
 
   function focusTitle() { titleField.field.forceActiveFocus() }
@@ -103,6 +117,9 @@ Column {
       chrome: root.chrome
       label: "DATE"
       placeholder: "YYYY-MM-DD"
+      trailingGlyph: "\u{F00ED}"                 // calendar
+      trailingActive: root.pickerOpen
+      onTrailingClicked: root.pickerOpen = !root.pickerOpen
       onSubmitted: root.submit()
       onEscaped: root.cancelled()
     }
@@ -135,6 +152,19 @@ Column {
       placeholder: "60"
       onSubmitted: root.submit()
       onEscaped: root.cancelled()
+    }
+  }
+
+  DatePicker {
+    width: parent.width
+    visible: root.pickerOpen
+    chrome: root.chrome
+    iso: dateField.text
+    todayISO: root.todayISO
+    mondayFirst: root.mondayFirst
+    onPicked: function(iso) {
+      dateField.text = iso
+      root.pickerOpen = false
     }
   }
 
