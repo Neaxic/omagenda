@@ -5,11 +5,11 @@
 # Datebook
 
 A calendar for the Omarchy bar - expanding the design already provided by DHH, this "upgrade" allows syncing with mail clients (only google calendar currently), and a greater overview.
-The app has had a short life, but im already getting benefits from this overhaul, so figured id share it. Fine grain refinement - maybe manually - might come later, right now its just HF & POC.
+The app has had a short life, but im already getting benefits from this overhaul, so figured id share it.
 
 For the google syncing to work, i need various setup on google cloud. You may come across "Google hasn't verified this app", you can safely proceed and chose Advanced → Go to Datebook.
 **There is no server, there is no db, this is all ran locally.**
-Because of the google project limitations, the plugin (currently) only allows for 100 users, ill expand if demand comes, and i might care for the setup a bit more.
+Because of the google project limitations, the plugin (currently) only allows for 100 users, ill expand if demand comes, and naturally i might care for the setup a bit more.
 
 **What it asks for:** `calendar.events` (read and write events) and
 `calendar.calendarlist.readonly` (see which calendars exist). Deliberately *not*
