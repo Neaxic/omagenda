@@ -1,3 +1,7 @@
+<img width="713" height="875" alt="image" src="https://github.com/user-attachments/assets/8a3b2b38-3154-446c-9a51-6d7e363e7c55" />
+
+
+
 # Datebook
 
 A calendar for the Omarchy bar - expanding the design already provided by DHH, this "upgrade" allows syncing with mail clients (only google calendar currently), and a greater overview.
