@@ -39,6 +39,13 @@ project — it wins over the shipped one.
 
 Tokens live in ~/.config/omagenda/google-tokens.json at 0600 and are never
 printed.
+
+A calendar can be shared with the user by anyone, so its size is not the user's
+to decide. Every read from Google therefore has a byte ceiling and every
+paginated walk a budget across its pages — see MAX_RESPONSE_BYTES and Budget.
+Going past one is an ordinary failure that saves no sync token, which leaves the
+next pass to start where this one did rather than from a token that claimed to
+have seen the pages we refused. tests/gcal.test.py holds those ceilings.
 """
 
 import base64
@@ -70,6 +77,20 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 API = "https://www.googleapis.com/calendar/v3"
 
+# Ceilings on anything read from Google. Nothing on the other end of these
+# requests is ours: a calendar can be shared with the user by anyone, and holds
+# whatever that person put in it. Both this helper and the long-lived shell that
+# collects its output keep a whole reply in memory at once, and urlopen's
+# timeout bounds how long a read may stall, not how much it may return — so
+# every read gets a byte ceiling, and a paginated walk gets a budget across all
+# of its pages (see Budget).
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024    # one HTTP reply
+MAX_ERROR_BYTES = 64 * 1024             # an error body, which we only excerpt
+MAX_SYNC_BYTES = 32 * 1024 * 1024       # every reply in one paginated walk
+MAX_SYNC_ITEMS = 20000                  # events one walk may hold
+MAX_SYNC_PAGES = 100                    # requests one walk may make
+MAX_SYNC_SECONDS = 180                  # wall clock across the whole walk
+
 # Event read/write plus a read-only look at which calendars exist. Deliberately
 # not the blanket "calendar" scope: this cannot create or delete a calendar.
 SCOPES = [
@@ -87,6 +108,69 @@ def die(message, code=1, **extra):
 
 def emit(payload):
     print(json.dumps(payload))
+
+
+def human_bytes(count):
+    if count >= 1024 * 1024:
+        return "%d MB" % (count // (1024 * 1024))
+    return "%d KB" % (count // 1024)
+
+
+def read_capped(stream, limit, budget=None, what="Google's reply"):
+    """Read a response body, refusing to grow past `limit` bytes.
+
+    Asking for one byte more than the ceiling is what tells "exactly at the
+    limit" apart from "there was more coming".
+    """
+    raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        die("%s is larger than Omagenda will read (%s)." % (what, human_bytes(limit)),
+            code=7, oversize=True)
+    if budget is not None:
+        budget.spend(len(raw))
+    return raw
+
+
+class Budget:
+    """What one paginated walk may spend: bytes, items, requests, seconds.
+
+    A ceiling per reply is not enough on its own, because a hundred pages just
+    under it add up the same way; the byte count is therefore shared across
+    every request the walk makes. Running out is a clean failure that saves no
+    sync token — half a page set with a fresh token would tell the next pass
+    that everything we dropped had already been seen.
+    """
+
+    def __init__(self, what, max_bytes=MAX_SYNC_BYTES, max_items=MAX_SYNC_ITEMS,
+                 max_pages=MAX_SYNC_PAGES, seconds=MAX_SYNC_SECONDS):
+        self.what = what
+        self.max_bytes = max_bytes
+        self.max_items = max_items
+        self.max_pages = max_pages
+        self.seconds = seconds
+        self.deadline = time.monotonic() + seconds
+        self.spent = 0
+        self.pages = 0
+
+    def page(self, held=0):
+        """Charge for one more request. `held` is what the walk holds already."""
+        if self.pages >= self.max_pages:
+            self.stop("runs to more pages than Omagenda will walk (%d)" % self.max_pages)
+        if held >= self.max_items:
+            self.stop("holds more entries than Omagenda will read at once (%d)" % self.max_items)
+        if time.monotonic() > self.deadline:
+            self.stop("is taking longer to read than Omagenda will wait (%ds)" % self.seconds)
+        self.pages += 1
+
+    def spend(self, count):
+        self.spent += count
+        if self.spent > self.max_bytes:
+            self.stop("is more data than Omagenda will read at once (%s)"
+                      % human_bytes(self.max_bytes))
+
+    def stop(self, why):
+        die("%s %s. Nothing was saved. Narrow Omagenda's sync window, or stop "
+            "syncing that calendar." % (self.what, why), code=7, oversize=True)
 
 
 def read_arg(value):
@@ -173,9 +257,10 @@ def post_form(url, fields):
     request.add_header("Content-Type", "application/x-www-form-urlencoded")
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode())
+            return json.loads(read_capped(
+                response, MAX_RESPONSE_BYTES, what="Google's token reply").decode())
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")
+        detail = exc.read(MAX_ERROR_BYTES).decode(errors="replace")
         try:
             parsed = json.loads(detail)
         except ValueError:
@@ -334,7 +419,7 @@ def access_token():
 
 # --- api -----------------------------------------------------------------------
 
-def api(path, method="GET", params=None, body=None):
+def api(path, method="GET", params=None, body=None, budget=None):
     url = API + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
@@ -345,10 +430,10 @@ def api(path, method="GET", params=None, body=None):
         request.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
-            raw = response.read().decode()
+            raw = read_capped(response, MAX_RESPONSE_BYTES, budget).decode()
             return json.loads(raw) if raw.strip() else {}
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")
+        detail = exc.read(MAX_ERROR_BYTES).decode(errors="replace")
         try:
             parsed = json.loads(detail).get("error", {})
         except ValueError:
@@ -365,10 +450,13 @@ def api(path, method="GET", params=None, body=None):
 
 def calendar_list():
     out, page = [], None
+    budget = Budget("your calendar list")
     while True:
+        budget.page(len(out))
         payload = api("/users/me/calendarList",
                       params={"maxResults": 250, "pageToken": page} if page
-                      else {"maxResults": 250})
+                      else {"maxResults": 250},
+                      budget=budget)
         for item in payload.get("items", []):
             out.append({
                 "id": item.get("id"),
@@ -424,7 +512,9 @@ def events(calendar_id, sync_token=None, time_min=None, time_max=None):
 
     items, page = [], None
     next_sync = None
+    budget = Budget("that calendar")
     while True:
+        budget.page(len(items))
         params = dict(base)
         if page:
             params["pageToken"] = page
@@ -432,7 +522,8 @@ def events(calendar_id, sync_token=None, time_min=None, time_max=None):
             params.pop("timeMax", None)
             params.pop("orderBy", None)
             params.pop("syncToken", None)
-        payload = api("/calendars/%s/events" % urllib.parse.quote(calendar_id), params=params)
+        payload = api("/calendars/%s/events" % urllib.parse.quote(calendar_id),
+                      params=params, budget=budget)
         if payload.get("_gone"):
             emit({"expired": True})
             return
