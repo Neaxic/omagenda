@@ -1047,7 +1047,14 @@ Item {
     atomicWrites: true
     printErrors: false
     onLoaded: root.loadEvents(text())
-    onLoadFailed: mkdirProc.running = true
+    // Only a missing file means first run. PermissionDenied, NotAFile or a
+    // plain read error mean the store is there and could not be read, and
+    // creating an empty one over it would throw the user's events away.
+    onLoadFailed: function(error) {
+      if (error === FileViewError.FileNotFound) { mkdirProc.running = true; return }
+      root.lastError = "Could not read " + root.eventsPath
+        + " (" + FileViewError.toString(error) + ") — not overwriting it"
+    }
     onFileChanged: reload()
   }
 
