@@ -81,15 +81,17 @@ API = "https://www.googleapis.com/calendar/v3"
 # requests is ours: a calendar can be shared with the user by anyone, and holds
 # whatever that person put in it. Both this helper and the long-lived shell that
 # collects its output keep a whole reply in memory at once, and urlopen's
-# timeout bounds how long a read may stall, not how much it may return — so
-# every read gets a byte ceiling, and a paginated walk gets a budget across all
-# of its pages (see Budget).
+# timeout bounds how long a read may stall, not how long it may take nor how
+# much it may return — so every read gets a byte ceiling and a clock, and a
+# paginated walk gets a budget across all of its pages (see Budget).
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024    # one HTTP reply
 MAX_ERROR_BYTES = 64 * 1024             # an error body, which we only excerpt
 MAX_SYNC_BYTES = 32 * 1024 * 1024       # every reply in one paginated walk
 MAX_SYNC_ITEMS = 20000                  # events one walk may hold
 MAX_SYNC_PAGES = 100                    # requests one walk may make
 MAX_SYNC_SECONDS = 180                  # wall clock across the whole walk
+MAX_READ_SECONDS = 60                   # wall clock for one reply read on its own
+READ_CHUNK = 64 * 1024                  # how much of a reply is taken at a time
 
 # Event read/write plus a read-only look at which calendars exist. Deliberately
 # not the blanket "calendar" scope: this cannot create or delete a calendar.
@@ -116,13 +118,37 @@ def human_bytes(count):
     return "%d KB" % (count // 1024)
 
 
-def read_capped(stream, limit, budget=None, what="Google's reply"):
-    """Read a response body, refusing to grow past `limit` bytes.
+def read_capped(stream, limit, budget=None, what="Google's reply",
+                seconds=MAX_READ_SECONDS):
+    """Read a response body, refusing to grow past `limit` bytes or `seconds`.
 
     Asking for one byte more than the ceiling is what tells "exactly at the
     limit" apart from "there was more coming".
+
+    The read is taken in chunks rather than in one call so the clock can be
+    looked at between them. A socket timeout only bounds how long the far end
+    may go *silent*; a reply that trickles a byte in under the wire every time
+    resets that timeout for as long as it likes, and one unbounded read is
+    enough to make the walk's whole deadline a fiction. The deadline here is
+    the walk's own when there is one, so a slow reply spends the same clock as
+    a slow sequence of pages.
     """
-    raw = stream.read(limit + 1)
+    deadline = budget.deadline if budget is not None else time.monotonic() + seconds
+    chunks = []
+    remaining = limit + 1
+    while remaining > 0:
+        chunk = stream.read(min(READ_CHUNK, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+        if time.monotonic() > deadline:
+            if budget is not None:
+                budget.stop("is taking longer to read than Omagenda will wait (%ds)"
+                            % budget.seconds)
+            die("%s is taking longer to read than Omagenda will wait (%ds)."
+                % (what, seconds), code=7, oversize=True)
+    raw = b"".join(chunks)
     if len(raw) > limit:
         die("%s is larger than Omagenda will read (%s)." % (what, human_bytes(limit)),
             code=7, oversize=True)
@@ -390,11 +416,21 @@ def save_tokens(payload, keep_refresh=None):
     return tokens
 
 
-def access_token():
+def access_token(force=False):
+    """The access token to send, refreshing it when it is due — or when asked.
+
+    `force` is how a 401 is answered. The stored expiry is an absolute wall
+    clock time, and a wall clock is not something to trust: when ntp steps the
+    machine's clock back, a token that really has expired still looks live for
+    as long as the correction was wide, and every request keeps going out with
+    it until the clock catches up. Google saying 401 is the authority on this,
+    not `expires_at`.
+    """
     tokens = read_json(TOKEN_FILE)
     if not tokens or not tokens.get("refresh_token"):
         die("not signed in: run `gcal login`", code=2, needs="login")
-    if tokens.get("access_token") and int(tokens.get("expires_at", 0)) > time.time():
+    if (not force and tokens.get("access_token")
+            and int(tokens.get("expires_at", 0)) > time.time()):
         return tokens["access_token"]
 
     client_id, client_secret = client_credentials()
@@ -419,7 +455,7 @@ def access_token():
 
 # --- api -----------------------------------------------------------------------
 
-def api(path, method="GET", params=None, body=None, budget=None):
+def api(path, method="GET", params=None, body=None, budget=None, retry=True):
     url = API + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
@@ -433,6 +469,16 @@ def api(path, method="GET", params=None, body=None, budget=None):
             raw = read_capped(response, MAX_RESPONSE_BYTES, budget).decode()
             return json.loads(raw) if raw.strip() else {}
     except urllib.error.HTTPError as exc:
+        # A rejected token is worth one more try with a fresh one. Without this
+        # a token Google has stopped honouring — revoked, or simply expired
+        # while the machine's clock said otherwise — breaks every sync until
+        # `expires_at` passes, which can be an hour of a red error for
+        # something a single refresh fixes.
+        if exc.code == 401 and retry:
+            exc.close()
+            access_token(force=True)
+            return api(path, method=method, params=params, body=body,
+                       budget=budget, retry=False)
         detail = exc.read(MAX_ERROR_BYTES).decode(errors="replace")
         try:
             parsed = json.loads(detail).get("error", {})

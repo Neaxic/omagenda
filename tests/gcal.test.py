@@ -49,6 +49,18 @@ def refusal(call):
         sys.stdout = saved
 
 
+def printed(call):
+    """Run `call`, returning the JSON it emitted on the way out."""
+    buffer = io.StringIO()
+    saved, sys.stdout = sys.stdout, buffer
+    try:
+        call()
+    finally:
+        sys.stdout = saved
+    lines = buffer.getvalue().strip().splitlines()
+    return json.loads(lines[-1]) if lines else None
+
+
 class ReadCapped(unittest.TestCase):
     def test_reads_up_to_the_ceiling(self):
         self.assertEqual(gcal.read_capped(io.BytesIO(b"x" * 10), 100), b"x" * 10)
@@ -65,6 +77,47 @@ class ReadCapped(unittest.TestCase):
         budget = gcal.Budget("that calendar")
         gcal.read_capped(io.BytesIO(b"x" * 64), 100, budget)
         self.assertEqual(budget.spent, 64)
+
+    def test_a_trickling_reply_runs_out_of_clock(self):
+        """A reply that never stalls long enough to time out, but never ends.
+
+        This is the case a socket timeout cannot catch: every chunk arrives
+        well inside it, so the far end can hold the read open for as long as it
+        keeps dribbling. The walk's deadline has to be what stops it.
+        """
+        budget = gcal.Budget("that calendar", max_bytes=1 << 30, seconds=0)
+        code, payload = refusal(
+            lambda: gcal.read_capped(Trickle(), 1 << 20, budget))
+        self.assertEqual(code, 7)
+        self.assertIn("longer to read", payload["error"])
+        # Stopped partway, not after swallowing the whole megabyte.
+        self.assertLessEqual(Trickle.served, gcal.READ_CHUNK)
+
+    def test_a_trickling_reply_is_bounded_without_a_budget_too(self):
+        # The token endpoint reads with no walk behind it, so it carries its
+        # own clock rather than none at all.
+        code, payload = refusal(
+            lambda: gcal.read_capped(Trickle(), 1 << 20, seconds=0))
+        self.assertEqual(code, 7)
+        self.assertIn("longer to read", payload["error"])
+
+    def test_a_chunked_read_still_returns_the_whole_body(self):
+        # The body is now taken in pieces; it must come back joined and intact.
+        body = bytes(range(256)) * ((gcal.READ_CHUNK // 256) * 3)
+        self.assertEqual(gcal.read_capped(io.BytesIO(body), len(body)), body)
+
+
+class Trickle:
+    """A stream that always has one more chunk and never finishes."""
+
+    served = 0
+
+    def __init__(self):
+        Trickle.served = 0
+
+    def read(self, size):
+        Trickle.served += size
+        return b"x" * size
 
 
 class BudgetCeilings(unittest.TestCase):
@@ -107,11 +160,27 @@ class BudgetCeilings(unittest.TestCase):
 
 
 class FakeGoogle(http.server.BaseHTTPRequestHandler):
-    """Serves whatever `FakeGoogle.page` currently holds, forever."""
+    """Serves whatever `FakeGoogle.page` currently holds, forever.
+
+    `reject_next` makes it answer 401 once first, the way Google answers a
+    token it has stopped honouring.
+    """
 
     page = b"{}"
+    reject_next = 0
+    requests = 0
 
     def do_GET(self):  # noqa: N802 - http.server's naming
+        FakeGoogle.requests += 1
+        if FakeGoogle.reject_next > 0:
+            FakeGoogle.reject_next -= 1
+            body = json.dumps({"error": {"code": 401, "message": "Invalid Credentials"}}).encode()
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         body = FakeGoogle.page
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -133,7 +202,8 @@ class Pagination(unittest.TestCase):
         cls.api, cls.token = gcal.API, gcal.access_token
         gcal.API = "http://127.0.0.1:%d" % cls.server.server_address[1]
         # No token file in a test run, and no request here needs a real one.
-        gcal.access_token = lambda: "test-token"
+        cls.forced = []
+        gcal.access_token = lambda force=False: (cls.forced.append(force) or "test-token")
 
     @classmethod
     def tearDownClass(cls):
@@ -156,6 +226,32 @@ class Pagination(unittest.TestCase):
         # Refused for holding too much, which is the ceiling that should bite
         # first on a calendar of ordinary-looking events.
         self.assertIn("entries", payload["error"])
+
+    def test_a_rejected_token_is_refreshed_and_the_request_retried(self):
+        """The case a wrong clock creates: a live-looking token Google refuses.
+
+        `expires_at` is wall clock, so an ntp step backwards leaves a dead
+        token looking valid. One forced refresh has to rescue it, or sync stays
+        broken until the clock catches up.
+        """
+        FakeGoogle.page = json.dumps({"items": [{"id": "e1", "summary": "Lunch"}]}).encode()
+        FakeGoogle.requests = 0
+        type(self).forced = []
+        FakeGoogle.reject_next = 1
+        out = printed(self.sync)
+        self.assertEqual([e["id"] for e in out["items"]], ["e1"])
+        # Asked twice: once with the stale token, once with a forced refresh.
+        self.assertEqual(FakeGoogle.requests, 2)
+        self.assertIn(True, type(self).forced)
+
+    def test_a_second_rejection_is_reported_rather_than_looped_on(self):
+        FakeGoogle.page = json.dumps({"items": []}).encode()
+        FakeGoogle.requests = 0
+        FakeGoogle.reject_next = 2
+        code, payload = refusal(self.sync)
+        self.assertNotEqual(code, 0)
+        self.assertIn("401", payload["error"])
+        self.assertEqual(FakeGoogle.requests, 2)
 
     def test_a_single_huge_page_is_refused_by_the_per_reply_ceiling(self):
         FakeGoogle.page = json.dumps({
