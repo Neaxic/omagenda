@@ -31,6 +31,7 @@
     "defaultSection": "center",
     "defaults": {
       "barMode": "next",
+      "barFormat": "",
       "barIcon": "calendar",
       "barMaxTitle": 18,
       "weekStartsMonday": true,
@@ -38,6 +39,7 @@
       "use24Hour": true,
       "upcomingDays": 14,
       "displayFont": "auto",
+      "gridMode": "month",
       "weeksShown": 3,
       "eventPalette": "spread"
     },
@@ -51,9 +53,16 @@
           "date",
           "count",
           "clock",
-          "icon"
+          "icon",
+          "custom"
         ],
         "defaultValue": "next"
+      },
+      {
+        "key": "barFormat",
+        "type": "string",
+        "label": "Bar format, used when \"Shows\" is custom — e.g. [{next.when} {next.title}] || {today.date}",
+        "defaultValue": ""
       },
       {
         "key": "barIcon",
@@ -95,6 +104,16 @@
         "type": "boolean",
         "label": "Show ISO week numbers",
         "defaultValue": true
+      },
+      {
+        "key": "gridMode",
+        "type": "enum",
+        "label": "Opens on — the whole month, or the rolling window of weeks",
+        "options": [
+          "month",
+          "weeks"
+        ],
+        "defaultValue": "month"
       },
       {
         "key": "weeksShown",

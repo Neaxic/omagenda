@@ -32,6 +32,7 @@ Item {
       : (root.chrome ? root.chrome.fill : "transparent")
 
     Text {
+      textFormat: Text.PlainText
       anchors.centerIn: parent
       text: "\u{F00ED}"                                   // md-calendar
       color: root.chrome ? root.chrome.body : "transparent"
@@ -62,6 +63,7 @@ Item {
     implicitHeight: monthText.implicitHeight
 
     Text {
+      textFormat: Text.PlainText
       id: monthText
       width: Math.min(implicitWidth, Math.max(Style.space(60), headline.width - dayText.width - Style.space(20)))
       elide: Text.ElideRight
@@ -74,6 +76,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       id: dayText
       anchors.left: monthText.right
       anchors.leftMargin: Style.space(20)

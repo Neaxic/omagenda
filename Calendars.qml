@@ -40,6 +40,7 @@ Column {
 
   // --- heading ------------------------------------------------------------------
   Text {
+    textFormat: Text.PlainText
     text: "CALENDARS"
     color: root.chrome ? root.chrome.dim : "transparent"
     font.family: root.chrome ? root.chrome.fontFamily : "monospace"
@@ -89,6 +90,7 @@ Column {
   // --- what to say about Google -------------------------------------------------
   // One paragraph, whichever state we are in, in place of a settings form.
   Text {
+    textFormat: Text.PlainText
     width: parent.width
     visible: text !== ""
     text: {
@@ -117,6 +119,7 @@ Column {
 
   // --- status -------------------------------------------------------------------
   Text {
+    textFormat: Text.PlainText
     width: parent.width
     visible: text !== ""
     text: {

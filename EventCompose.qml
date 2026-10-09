@@ -86,6 +86,7 @@ Column {
     || daysField.focused || timeField.focused || lengthField.focused || placeField.focused
 
   Text {
+    textFormat: Text.PlainText
     text: root.editingId === "" ? "NEW EVENT" : "EDIT EVENT"
     color: root.chrome ? root.chrome.dim : "transparent"
     font.family: root.chrome ? root.chrome.fontFamily : "monospace"
@@ -184,6 +185,7 @@ Column {
     visible: root.sources.length > 1
 
     Text {
+      textFormat: Text.PlainText
       text: "CALENDAR"
       color: root.chrome ? root.chrome.dim : "transparent"
       font.family: root.chrome ? root.chrome.fontFamily : "monospace"
@@ -204,6 +206,7 @@ Column {
     spacing: Style.space(8)
 
     Text {
+      textFormat: Text.PlainText
       text: "COLOUR"
       color: root.chrome ? root.chrome.dim : "transparent"
       font.family: root.chrome ? root.chrome.fontFamily : "monospace"
@@ -223,6 +226,7 @@ Column {
     spacing: Style.space(8)
 
     Text {
+      textFormat: Text.PlainText
       text: "REPEATS"
       color: root.chrome ? root.chrome.dim : "transparent"
       font.family: root.chrome ? root.chrome.fontFamily : "monospace"
@@ -245,6 +249,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     width: parent.width
     visible: root.error !== ""
     text: root.error

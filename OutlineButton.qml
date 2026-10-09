@@ -45,6 +45,7 @@ Item {
     spacing: Style.space(10)
 
     Text {
+      textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       visible: root.glyph !== ""
       text: root.glyph
@@ -54,6 +55,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       visible: !root.iconOnly
       text: root.label

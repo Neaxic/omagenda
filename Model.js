@@ -68,8 +68,54 @@ var REPEAT_LABELS = {
   monthly: "every month", yearly: "every year"
 }
 
-// What the bar entry shows. "next" falls back to the date when nothing is due.
-var BAR_MODES = ["next", "date", "count", "clock", "icon"]
+// What the bar entry shows. "next" falls back to the date when nothing is due;
+// "custom" hands the whole line to the user's own format string.
+var BAR_MODES = ["next", "date", "count", "clock", "icon", "custom"]
+
+// Every mode is really a format (see the grammar over barLabel below) — the
+// presets are just the four shapes worth having a name for. Keeping them as
+// strings means a preset and a custom line go through exactly one renderer, so
+// neither can drift from the other.
+var BAR_FORMATS = {
+  next: "[{next.when} {next.title}] || {today.date}",
+  date: "{today.date}",
+  count: "{count.phrase}",
+  clock: "{today.day} {today.d}/{today.m} {clock.time}",
+  icon: "",
+  custom: ""
+}
+
+// The tokens a format may name, with the note the settings page shows. This
+// list is the documentation, and a test holds it to the values the renderer
+// actually resolves, so it cannot quietly go stale.
+var BAR_TOKENS = [
+  { key: "next.title", note: "the next event's title, capped by \"Longest title\"" },
+  { key: "next.when", note: "its time today, else the day it falls on" },
+  { key: "next.time", note: "its start time, empty when it is all day" },
+  { key: "next.end", note: "its end time" },
+  { key: "next.range", note: "\"14:00 - 15:00\" or \"All day\"" },
+  { key: "next.day", note: "\"Today\", \"Tomorrow\", else \"Mon 5 Oct\"" },
+  { key: "next.in", note: "how far off it is: \"in 25m\", \"in 3h\", \"in 2d\"" },
+  { key: "next.span", note: "for a run of days, where you are in it" },
+  { key: "next.iso", note: "its date as YYYY-MM-DD" },
+  { key: "today.date", note: "\"Sat 26 Sep\"" },
+  { key: "today.day", note: "\"Saturday\"" },
+  { key: "today.wday", note: "\"Sat\"" },
+  { key: "today.d", note: "26, or today.dd for 06" },
+  { key: "today.m", note: "9, or today.mm for 09" },
+  { key: "today.mon", note: "\"Sep\", or today.month for \"September\"" },
+  { key: "today.yyyy", note: "2026, or today.yy for 26" },
+  { key: "today.week", note: "the ISO week number" },
+  { key: "today.iso", note: "today as YYYY-MM-DD" },
+  { key: "clock.time", note: "\"14:32\", or \"2:32pm\" on a 12-hour clock" },
+  { key: "clock.h", note: "the hour, or clock.hh padded" },
+  { key: "clock.mm", note: "the minute" },
+  { key: "clock.ampm", note: "\"am\" or \"pm\"" },
+  { key: "count.today", note: "how many events today, empty when none" },
+  { key: "count.upcoming", note: "how many in the upcoming window" },
+  { key: "count.phrase", note: "\"3 events\", \"1 event\", \"Clear\"" },
+  { key: "now", note: "strftime: {now:%A %-d/%-m %H:%M}" }
+]
 
 var BAR_ICONS = [
   { key: "calendar", glyph: "\u{F00ED}", label: "Calendar" },
@@ -357,6 +403,28 @@ function windowLabel(startISO, endISO) {
   if (from.getFullYear() !== to.getFullYear())
     return left + " " + from.getFullYear() + " – " + right + " " + to.getFullYear()
   return left + " – " + right + " " + to.getFullYear()
+}
+
+// Scrolling the grid pages it. A notch of a mouse wheel is 120 units, but a
+// trackpad and a free-spinning wheel send fractions of one continuously, so the
+// deltas have to bank: this takes the running total and one event's y delta and
+// returns the whole steps to take plus what is left over. Positive y is a scroll
+// away from you, which goes *back* in time, so the sign is flipped — the
+// direction every calendar scrolls. A change of direction drops the leftovers
+// rather than finishing the last notch the way it was already going.
+var WHEEL_NOTCH = 120
+
+function wheelSteps(accum, deltaY, notch) {
+  var step = Math.abs(Number(notch)) || WHEEL_NOTCH
+  var banked = Number(accum) || 0
+  var dy = Number(deltaY) || 0
+  if (dy === 0) return { steps: 0, accum: banked }
+  if (banked !== 0 && (dy > 0) !== (banked > 0)) banked = 0
+  banked += dy
+  var notches = banked / step
+  var steps = notches > 0 ? Math.floor(notches) : Math.ceil(notches)
+  // -0 is a step of none, and reads as one everywhere but a strict compare.
+  return { steps: steps === 0 ? 0 : -steps, accum: banked - steps * step }
 }
 
 // The year view: twelve months, each with its own weeks, for the mini grids.
@@ -1064,31 +1132,324 @@ function normalizeBarMode(value) {
   return BAR_MODES.indexOf(s) === -1 ? "next" : s
 }
 
-// The text beside the bar icon. `mode` is a BAR_MODES entry; "icon" returns ""
-// so the widget falls back to its icon-only button.
-//   next  -> "14:30 Dentist" / "Tue Standup", the date when nothing is due
-//   date  -> "Mon 5 Oct"
-//   count -> "3 today"
-//   clock -> "Monday 5/10 14:32", a wall clock that says nothing about events
+// ------------------------------------------------------------- the bar's text
+//
+// What the bar shows is a template rather than a fixed set of shapes. Four
+// rules, and that is the whole grammar:
+//
+//   {next.title}                 a token; {next.title:12} caps it at 12
+//                                characters, :upper and :lower case it
+//   [{next.when} {next.title}]   a group — it drops out whole when a token
+//                                inside it has no value, so nothing is left
+//                                holding a separator up on its own
+//   ... || {today.date}          alternatives, tried left to right; the first
+//                                one that renders anything wins
+//   {now:%A %-d/%-m}             strftime, for a shape no token names
+//
+// Double a brace or bracket for a literal one ({{ }} [[ ]]), which also means a
+// literal "||" cannot be written (a single "|" needs no escaping) and nested
+// groups need a space between their closing brackets. Runs of whitespace
+// collapse and the result is trimmed, so a dropped group leaves no gap.
+//
+// A token this file does not know renders as itself — a typo shows up on the
+// bar instead of silently swallowing the line around it.
+//
+// There is deliberately no styling in the grammar. The bar is a single
+// PlainText item (Panel.qml's WidgetButton) and an event title can arrive from
+// a shared Google invite, so markup there would be markup we did not write.
+
+// Splits a format into alternatives, each a tree of text / token / group nodes.
+// Nothing here can throw: an unterminated "{" or "[" is taken as literal text,
+// because a half-typed format is the normal state of a field being edited.
+function parseBarFormat(format) {
+  var src = String(format === undefined || format === null ? "" : format)
+  var alternatives = []
+  var root = []
+  var stack = [root]
+  var buffer = ""
+
+  function flush() {
+    if (buffer === "") return
+    stack[stack.length - 1].push({ kind: "text", value: buffer })
+    buffer = ""
+  }
+
+  var i = 0
+  while (i < src.length) {
+    var c = src.charAt(i), d = src.charAt(i + 1)
+    if (d === c && (c === "{" || c === "}" || c === "[" || c === "]")) {
+      buffer += c
+      i += 2
+      continue
+    }
+    if (c === "|" && d === "|" && stack.length === 1) {
+      flush()
+      alternatives.push(root)
+      root = []
+      stack = [root]
+      i += 2
+      continue
+    }
+    if (c === "{") {
+      var close = src.indexOf("}", i + 1)
+      if (close === -1) { buffer += c; i++; continue }
+      flush()
+      var body = src.slice(i + 1, close)
+      var colon = body.indexOf(":")
+      stack[stack.length - 1].push({
+        kind: "token",
+        name: trim(colon === -1 ? body : body.slice(0, colon)).toLowerCase(),
+        arg: trim(colon === -1 ? "" : body.slice(colon + 1))
+      })
+      i = close + 1
+      continue
+    }
+    if (c === "[") {
+      flush()
+      var group = { kind: "group", parts: [] }
+      stack[stack.length - 1].push(group)
+      stack.push(group.parts)
+      i++
+      continue
+    }
+    if (c === "]" && stack.length > 1) { flush(); stack.pop(); i++; continue }
+    buffer += c
+    i++
+  }
+  flush()
+  alternatives.push(root)
+  return alternatives
+}
+
+// Every token in a format, flattened out of its groups and alternatives — for
+// the clock check below and for naming a bad token back to the user.
+function barFormatTokens(format) {
+  var out = []
+  function walk(parts) {
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].kind === "token") out.push(parts[i])
+      else if (parts[i].kind === "group") walk(parts[i].parts)
+    }
+  }
+  var alternatives = parseBarFormat(format)
+  for (var a = 0; a < alternatives.length; a++) walk(alternatives[a])
+  return out
+}
+
+// "in 25m", "in 3h30m", "in 2d" — how far off the next event is, at the
+// coarsest unit still true, and "now" for one under way. Past a day it counts
+// calendar days rather than 24-hour blocks: an event 45 hours out is the day
+// after tomorrow, so "in 2d" is what it is called everywhere else on the page,
+// and "in 1d" beside "Mon 28 Sep" would just look wrong. An all-day event today
+// has nothing to count down to at all, which empties the token.
+function untilLabel(occurrence, todayIso, nowMinutes) {
+  if (!occurrence) return ""
+  var days = daysBetween(todayIso, occurrence.iso)
+  if (!isFinite(days)) return ""
+  if (occurrence.time === "") return days <= 0 ? "" : "in " + days + "d"
+  var delta = days * 1440 + minutesOfDay(occurrence.time) - Math.round(Number(nowMinutes) || 0)
+  if (delta <= 0) return "now"
+  if (delta < 60) return "in " + delta + "m"
+  if (delta < 1440) {
+    var hours = Math.floor(delta / 60), rest = delta % 60
+    return rest === 0 ? "in " + hours + "h" : "in " + hours + "h" + rest + "m"
+  }
+  return "in " + Math.max(1, days) + "d"
+}
+
+// strftime enough of it for a bar: the pieces a date and a wall clock are made
+// of, with "%-" for the unpadded form. An unknown directive is left as typed.
+function formatStamp(spec, options) {
+  var o = options || {}
+  var iso = o.todayISO || todayISO()
+  var date = fromISO(iso)
+  if (!date) return ""
+  var minutes = ((Math.round(Number(o.nowMinutes) || 0) % 1440) + 1440) % 1440
+  var hour = Math.floor(minutes / 60), minute = minutes % 60
+  var half = hour % 12 === 0 ? 12 : hour % 12
+  var padded = {
+    A: WEEKDAY_LONG[date.getDay()], a: WEEKDAY_SHORT[date.getDay()],
+    B: MONTH_NAMES[date.getMonth()], b: MONTH_SHORT[date.getMonth()],
+    d: pad2(date.getDate()), m: pad2(date.getMonth() + 1),
+    Y: String(date.getFullYear()), y: pad2(date.getFullYear() % 100),
+    H: pad2(hour), I: pad2(half), M: pad2(minute),
+    p: hour < 12 ? "AM" : "PM", P: hour < 12 ? "am" : "pm",
+    V: pad2(isoWeek(date)), F: iso, n: "\n", "%": "%"
+  }
+  var bare = {
+    d: String(date.getDate()), m: String(date.getMonth() + 1), H: String(hour),
+    I: String(half), M: String(minute), V: String(isoWeek(date)), y: String(date.getFullYear() % 100)
+  }
+  return String(spec).replace(/%(-?)([A-Za-z%])/g, function(match, dash, letter) {
+    if (dash !== "" && bare[letter] !== undefined) return bare[letter]
+    return padded[letter] !== undefined ? padded[letter] : match
+  })
+}
+
+// Every value a format can name, resolved once per render. A name is always
+// present, empty when it has nothing to say — that is what tells a missing
+// value ("" drops its group) apart from a misspelt one (undefined, shown raw).
+function barTokenValues(options) {
+  var o = options || {}
+  var today = o.todayISO || todayISO()
+  var date = fromISO(today)
+  var use24 = o.use24
+  var next = o.next
+  var count = Math.max(0, Math.round(Number(o.todayCount) || 0))
+  var ahead = Math.max(0, Math.round(Number(o.upcomingCount) || 0))
+  var minutes = ((Math.round(Number(o.nowMinutes) || 0) % 1440) + 1440) % 1440
+  var hour = Math.floor(minutes / 60)
+  var shown = use24 === false ? (hour % 12 === 0 ? 12 : hour % 12) : hour
+
+  var values = {
+    "today.iso": date ? today : "",
+    "today.date": relativeDayOrDate(today, today),
+    "today.day": date ? WEEKDAY_LONG[date.getDay()] : "",
+    "today.wday": date ? WEEKDAY_SHORT[date.getDay()] : "",
+    "today.d": date ? String(date.getDate()) : "",
+    "today.dd": date ? pad2(date.getDate()) : "",
+    "today.m": date ? String(date.getMonth() + 1) : "",
+    "today.mm": date ? pad2(date.getMonth() + 1) : "",
+    "today.mon": date ? MONTH_SHORT[date.getMonth()] : "",
+    "today.month": date ? MONTH_NAMES[date.getMonth()] : "",
+    "today.yyyy": date ? String(date.getFullYear()) : "",
+    "today.yy": date ? pad2(date.getFullYear() % 100) : "",
+    "today.week": date ? String(isoWeek(date)) : "",
+
+    "clock.time": clockTime(minutes, use24),
+    "clock.h": String(shown),
+    "clock.hh": pad2(shown),
+    "clock.mm": pad2(minutes % 60),
+    "clock.ampm": hour < 12 ? "am" : "pm",
+
+    // A count of nothing is nothing. The bar exists to say something, and "0
+    // events" is noise, so a zero count empties its group; count.phrase is the
+    // one that still speaks when the day is clear.
+    "count.today": count === 0 ? "" : String(count),
+    "count.upcoming": ahead === 0 ? "" : String(ahead),
+    "count.phrase": count === 0 ? "Clear" : count + (count === 1 ? " event" : " events"),
+
+    "next.title": next ? trim(next.title) : "",
+    "next.time": next ? formatTime(next.time, use24) : "",
+    "next.end": next ? formatTime(endTime(next.time, next.durationMin), use24) : "",
+    "next.range": next ? timeRange(next, use24) : "",
+    "next.day": next ? relativeDay(next.iso, today) : "",
+    "next.in": next ? untilLabel(next, today, minutes) : "",
+    "next.span": next && next.spans ? spanLabel(next, use24) : "",
+    "next.iso": next ? String(next.iso) : "",
+    "next.when": ""
+  }
+
+  // The composite the "next" preset is built on, and the shape that mode has
+  // always had: the time when it is today, the day when it is not, and the day
+  // either way for an all-day event, which has no time to show.
+  if (next) {
+    var when = next.iso === today ? formatTime(next.time, use24) : relativeDay(next.iso, today)
+    values["next.when"] = when === "" ? relativeDay(next.iso, today) : when
+  }
+  return values
+}
+
+// The token names a format may use, "now" included.
+function barTokenNames() {
+  var out = ["now"]
+  var values = barTokenValues({})
+  for (var key in values) out.push(key)
+  return out
+}
+
+// One token's text: null when it has no value (its group drops out), the token
+// as typed when the name is not one of ours.
+function barTokenText(token, values, options) {
+  if (token.name === "now") return formatStamp(token.arg, options)
+  var value = values[token.name]
+  if (value === undefined)
+    return "{" + token.name + (token.arg === "" ? "" : ":" + token.arg) + "}"
+  if (value === "") return null
+  // Case and length are separate jobs even though one argument names both: a
+  // title asked for in upper case still has to fit the bar, so the default cap
+  // survives {next.title:upper}. Only a number of its own replaces it.
+  if (token.arg === "upper") value = value.toUpperCase()
+  else if (token.arg === "lower") value = value.toLowerCase()
+  var cap = -1
+  if (/^\d+$/.test(token.arg)) cap = parseInt(token.arg, 10)
+  else if (token.name === "next.title") cap = Math.max(6, Math.round((options || {}).maxTitle || 18))
+  if (cap > 0 && value.length > cap) return value.slice(0, cap - 1) + "…"
+  return value
+}
+
+// Renders one node list. null means a token in it had no value: at the top
+// level that retires the whole alternative, inside a group only the group.
+function renderBarParts(parts, values, options) {
+  var out = ""
+  for (var i = 0; i < parts.length; i++) {
+    var part = parts[i]
+    if (part.kind === "text") { out += part.value; continue }
+    if (part.kind === "group") {
+      var inner = renderBarParts(part.parts, values, options)
+      if (inner !== null) out += inner
+      continue
+    }
+    var text = barTokenText(part, values, options)
+    if (text === null) return null
+    out += text
+  }
+  return out
+}
+
+function renderBarFormat(format, options) {
+  var o = options || {}
+  var values = barTokenValues(o)
+  var alternatives = parseBarFormat(format)
+  for (var i = 0; i < alternatives.length; i++) {
+    var text = renderBarParts(alternatives[i], values, o)
+    if (text === null) continue
+    text = trim(String(text).replace(/\s{2,}/g, " "))
+    if (text !== "") return text
+  }
+  return ""
+}
+
+// The format a mode resolves to. Only "custom" reads the user's string, so
+// trying a preset never touches what they wrote; an empty custom format falls
+// back to the "next" shape rather than blanking the bar, since a bar with
+// nothing on it is indistinguishable from a broken one.
+function barFormatFor(mode, format) {
+  var key = normalizeBarMode(mode)
+  if (key !== "custom") return BAR_FORMATS[key]
+  var custom = String(format === undefined || format === null ? "" : format)
+  return trim(custom) === "" ? BAR_FORMATS.next : custom
+}
+
+// "" when a format is usable, else the first thing wrong with it. Only the
+// token names can be wrong — every other malformation is taken as literal text.
+function barFormatIssue(format) {
+  var known = barTokenNames()
+  var tokens = barFormatTokens(format)
+  for (var i = 0; i < tokens.length; i++)
+    if (known.indexOf(tokens[i].name) === -1)
+      return "no such token: {" + tokens[i].name + "}"
+  return ""
+}
+
+// Whether a format needs the minute to be right, which decides how the shared
+// ticker is timed — see Service.tickInterval().
+function barFormatWantsClock(format) {
+  var tokens = barFormatTokens(format)
+  for (var i = 0; i < tokens.length; i++) {
+    var token = tokens[i]
+    if (token.name.indexOf("clock.") === 0) return true
+    if (token.name === "now" && /%-?[HIMpP]/.test(token.arg)) return true
+  }
+  return false
+}
+
+// The text beside the bar icon. `mode` is a BAR_MODES entry and `format` the
+// custom string; "icon" resolves to an empty format, which is what makes the
+// widget fall back to its icon-only button.
 function barLabel(options) {
   var o = options || {}
-  var mode = normalizeBarMode(o.mode)
-  var today = o.todayISO || todayISO()
-  if (mode === "icon") return ""
-  if (mode === "date") return relativeDayOrDate(today, today)
-  if (mode === "clock") return clockDate(today) + " " + clockTime(o.nowMinutes, o.use24)
-  if (mode === "count") {
-    var n = o.todayCount || 0
-    return n === 0 ? "Clear" : n + (n === 1 ? " event" : " events")
-  }
-  var next = o.next
-  if (!next) return relativeDayOrDate(today, today)
-  var when = next.iso === today ? formatTime(next.time, o.use24) : relativeDay(next.iso, today)
-  if (when === "") when = relativeDay(next.iso, today)
-  var title = trim(next.title)
-  var cap = Math.max(6, Math.round(o.maxTitle || 18))
-  if (title.length > cap) title = title.slice(0, cap - 1) + "…"
-  return when + " " + title
+  return renderBarFormat(barFormatFor(o.mode, o.format), o)
 }
 
 // The bar's plain-date form: never "Today", always a readable date.
@@ -1191,8 +1552,11 @@ if (typeof module !== "undefined") {
     COLOR_ALIASES: COLOR_ALIASES,
     REPEAT_LABELS: REPEAT_LABELS,
     BAR_MODES: BAR_MODES,
+    BAR_FORMATS: BAR_FORMATS,
+    BAR_TOKENS: BAR_TOKENS,
     BAR_ICONS: BAR_ICONS,
     pad2: pad2,
+    trim: trim,
     toISO: toISO,
     isISODate: isISODate,
     fromISO: fromISO,
@@ -1214,6 +1578,8 @@ if (typeof module !== "undefined") {
     addMonthsToISO: addMonthsToISO,
     weeksFrom: weeksFrom,
     windowLabel: windowLabel,
+    WHEEL_NOTCH: WHEEL_NOTCH,
+    wheelSteps: wheelSteps,
     yearMonths: yearMonths,
     normalizeTime: normalizeTime,
     minutesOfDay: minutesOfDay,
@@ -1267,6 +1633,16 @@ if (typeof module !== "undefined") {
     clockTime: clockTime,
     clockDate: clockDate,
     barLabel: barLabel,
+    parseBarFormat: parseBarFormat,
+    barFormatTokens: barFormatTokens,
+    barTokenValues: barTokenValues,
+    barTokenNames: barTokenNames,
+    renderBarFormat: renderBarFormat,
+    barFormatFor: barFormatFor,
+    barFormatIssue: barFormatIssue,
+    barFormatWantsClock: barFormatWantsClock,
+    untilLabel: untilLabel,
+    formatStamp: formatStamp,
     tooltipText: tooltipText
   }
 }

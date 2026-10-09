@@ -65,6 +65,7 @@ Column {
     }
 
     Text {
+      textFormat: Text.PlainText
       anchors.centerIn: parent
       text: (Model.MONTH_NAMES[root.viewMonth] + " " + root.viewYear).toUpperCase()
       color: root.chrome ? root.chrome.dim : "transparent"
@@ -157,6 +158,7 @@ Column {
             }
 
             Text {
+              textFormat: Text.PlainText
               anchors.centerIn: parent
               text: pickCell.modelData.iso === "" ? "" : String(pickCell.modelData.day)
               color: {

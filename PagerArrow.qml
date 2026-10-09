@@ -17,6 +17,7 @@ Item {
   implicitHeight: Style.space(24)
 
   Text {
+    textFormat: Text.PlainText
     anchors.centerIn: parent
     text: root.glyph
     color: {

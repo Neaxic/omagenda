@@ -50,6 +50,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
       width: parent.width - Style.space(12) - Style.space(28) - noteText.width
       text: root.name
@@ -62,6 +63,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       id: noteText
       anchors.verticalCenter: parent.verticalCenter
       text: root.note

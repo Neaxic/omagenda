@@ -60,6 +60,7 @@ Item {
           spacing: Style.space(6)
 
           Text {
+            textFormat: Text.PlainText
             anchors.verticalCenter: parent.verticalCenter
             visible: text !== ""
             text: segment.modelData.glyph === undefined ? "" : segment.modelData.glyph
@@ -72,6 +73,7 @@ Item {
           }
 
           Text {
+            textFormat: Text.PlainText
             anchors.verticalCenter: parent.verticalCenter
             visible: text !== ""
             text: segment.modelData.label === undefined ? "" : segment.modelData.label

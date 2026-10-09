@@ -707,3 +707,126 @@ test("barIconGlyph falls back to the calendar glyph", () => {
   assert.equal(M.barIconGlyph("none"), "")
   assert.equal(M.barIconGlyph("nope"), M.barIconGlyph("calendar"))
 })
+
+// --- the bar's format -------------------------------------------------------
+
+test("every mode is a format, and the presets render what they always did", () => {
+  const next = M.eventsOn([ev({ time: "14:30", title: "Dentist" })], "2026-09-26")[0]
+  const base = { next, todayISO: "2026-09-26", nowMinutes: 14 * 60 + 32, todayCount: 2 }
+  for (const mode of M.BAR_MODES)
+    assert.equal(M.barLabel(Object.assign({ mode }, base)),
+                 M.renderBarFormat(M.barFormatFor(mode, ""), base))
+  // Only "custom" reads the string, so a preset cannot be edited out from under
+  // the user, and trying one and coming back keeps what they wrote.
+  assert.equal(M.barFormatFor("date", "{today.week}"), M.BAR_FORMATS.date)
+  assert.equal(M.barFormatFor("custom", "{today.week}"), "{today.week}")
+  // An empty custom format would be a bar you cannot tell from a broken one.
+  assert.equal(M.barFormatFor("custom", "   "), M.BAR_FORMATS.next)
+})
+
+test("a group drops out whole rather than leaving its separator behind", () => {
+  const on = { todayISO: "2026-09-26", todayCount: 3 }
+  const off = { todayISO: "2026-09-26", todayCount: 0 }
+  assert.equal(M.renderBarFormat("{today.wday}[ · {count.today} due]", on), "Sat · 3 due")
+  assert.equal(M.renderBarFormat("{today.wday}[ · {count.today} due]", off), "Sat")
+  // A bare token outside a group retires its whole alternative instead.
+  assert.equal(M.renderBarFormat("{count.today} due || nothing on", off), "nothing on")
+  // First alternative that renders anything wins, left to right.
+  assert.equal(M.renderBarFormat("{count.today} due || nothing on", on), "3 due")
+  // Whitespace left by a dropped group collapses; the line is never ragged.
+  assert.equal(M.renderBarFormat("[{count.today}] {today.wday} [{count.today}]", off), "Sat")
+})
+
+test("a misspelt token shows itself instead of swallowing the line", () => {
+  const o = { todayISO: "2026-09-26" }
+  assert.equal(M.renderBarFormat("{today.titel} {today.wday}", o), "{today.titel} Sat")
+  assert.equal(M.barFormatIssue("{today.titel}"), "no such token: {today.titel}")
+  assert.equal(M.barFormatIssue("[{next.title}] || {today.date}"), "")
+  // Every token the settings page advertises has to be one the renderer knows.
+  const known = M.barTokenNames()
+  for (const entry of M.BAR_TOKENS)
+    assert.ok(known.indexOf(entry.key) !== -1, entry.key + " is documented but not resolved")
+  // And every preset must be made of them, or a preset could ship broken.
+  for (const mode of M.BAR_MODES) assert.equal(M.barFormatIssue(M.BAR_FORMATS[mode]), "")
+})
+
+test("braces and brackets are escaped by doubling", () => {
+  const o = { todayISO: "2026-09-26" }
+  assert.equal(M.renderBarFormat("{{{today.wday}}}", o), "{Sat}")
+  assert.equal(M.renderBarFormat("[[{today.wday}]]", o), "[Sat]")
+  // A half-typed format is the normal state of a field being edited: it has to
+  // render as text, not throw.
+  assert.equal(M.renderBarFormat("{today.wday", o), "{today.wday")
+  assert.equal(M.renderBarFormat("[{today.wday}", o), "Sat")
+  assert.equal(M.renderBarFormat("", o), "")
+})
+
+test("the title cap is barMaxTitle by default and an argument when given", () => {
+  const long = M.eventsOn([ev({ title: "Quarterly planning workshop", time: "10:00" })], "2026-09-26")[0]
+  const o = { next: long, todayISO: "2026-09-26", maxTitle: 10 }
+  assert.equal(M.renderBarFormat("{next.title}", o), "Quarterly…")
+  assert.equal(M.renderBarFormat("{next.title:6}", o), "Quart…")
+  // :0 opts out of the cap entirely; the other two args are case changes.
+  assert.equal(M.renderBarFormat("{next.title:0}", o), "Quarterly planning workshop")
+  assert.equal(M.renderBarFormat("{today.wday:upper}", o), "SAT")
+  assert.equal(M.renderBarFormat("{today.mon:lower}", o), "sep")
+  // Case and length are separate jobs: a title asked for in upper case still
+  // has to fit the bar, so the default cap survives the argument.
+  assert.equal(M.renderBarFormat("{next.title:upper}", o), "QUARTERLY\u2026")
+})
+
+test("untilLabel counts down at the coarsest unit that is still true", () => {
+  const at = (time, date) => M.eventsOn([ev({ time, date: date || "2026-09-26" })], date || "2026-09-26")[0]
+  assert.equal(M.untilLabel(at("14:30"), "2026-09-26", 14 * 60 + 5), "in 25m")
+  assert.equal(M.untilLabel(at("14:30"), "2026-09-26", 11 * 60 + 30), "in 3h")
+  assert.equal(M.untilLabel(at("14:30"), "2026-09-26", 11 * 60), "in 3h30m")
+  assert.equal(M.untilLabel(at("14:30"), "2026-09-26", 14 * 60 + 30), "now")
+  assert.equal(M.untilLabel(at("09:00", "2026-09-28"), "2026-09-26", 12 * 60), "in 2d")
+  // Past a day it counts calendar days, not 24-hour blocks: 45 hours out is the
+  // day after tomorrow, which is "in 2d" everywhere else on the page.
+  assert.equal(M.untilLabel(at("23:00", "2026-09-27"), "2026-09-26", 0), "in 1d")
+  // An all-day event today has nothing to count down to, which empties the token.
+  assert.equal(M.untilLabel(at(""), "2026-09-26", 12 * 60), "")
+  assert.equal(M.untilLabel(at("", "2026-09-27"), "2026-09-26", 12 * 60), "in 1d")
+  assert.equal(M.untilLabel(null, "2026-09-26", 0), "")
+})
+
+test("formatStamp covers a date and a wall clock, %- for the bare form", () => {
+  const o = { todayISO: "2026-09-05", nowMinutes: 9 * 60 + 7 }
+  assert.equal(M.formatStamp("%A %-d/%-m %H:%M", o), "Saturday 5/9 09:07")
+  assert.equal(M.formatStamp("%a %d %b %Y", o), "Sat 05 Sep 2026")
+  assert.equal(M.formatStamp("%I:%M%P", o), "09:07am")
+  assert.equal(M.formatStamp("%F wk%V", o), "2026-09-05 wk36")
+  assert.equal(M.formatStamp("100%% %Q", o), "100% %Q")
+  // Midnight is 12 on a 12-hour clock, not 0 — the classic off-by-twelve.
+  assert.equal(M.formatStamp("%-I%P", { todayISO: "2026-09-05", nowMinutes: 0 }), "12am")
+  assert.equal(M.formatStamp("%H", { todayISO: "nonsense" }), "")
+})
+
+test("only a format with a clock in it needs the minute-aligned tick", () => {
+  assert.equal(M.barFormatWantsClock(M.BAR_FORMATS.clock), true)
+  assert.equal(M.barFormatWantsClock(M.BAR_FORMATS.next), false)
+  assert.equal(M.barFormatWantsClock("{today.date} {clock.time}"), true)
+  assert.equal(M.barFormatWantsClock("{now:%H:%M}"), true)
+  // A strftime stamp of the date alone does not move within the day.
+  assert.equal(M.barFormatWantsClock("{now:%A %-d/%-m}"), false)
+})
+
+test("wheel deltas bank into whole steps, scrolling down going forward", () => {
+  // One notch of a mouse wheel, each way.
+  assert.deepEqual(M.wheelSteps(0, -120), { steps: 1, accum: 0 })
+  assert.deepEqual(M.wheelSteps(0, 120), { steps: -1, accum: 0 })
+  // A trackpad's fractions: nothing moves until a whole notch is in the bank.
+  assert.deepEqual(M.wheelSteps(0, -40), { steps: 0, accum: -40 })
+  assert.deepEqual(M.wheelSteps(-40, -40), { steps: 0, accum: -80 })
+  assert.deepEqual(M.wheelSteps(-80, -40), { steps: 1, accum: 0 })
+  // Overshooting banks the remainder rather than dropping it.
+  assert.deepEqual(M.wheelSteps(0, -200), { steps: 1, accum: -80 })
+  // A flick moves several weeks at once.
+  assert.deepEqual(M.wheelSteps(0, -360), { steps: 3, accum: 0 })
+  // Turning around drops what was banked the other way.
+  assert.deepEqual(M.wheelSteps(-80, 60), { steps: 0, accum: 60 })
+  // A horizontal-only event leaves the bank alone.
+  assert.deepEqual(M.wheelSteps(-80, 0), { steps: 0, accum: -80 })
+  assert.equal(M.WHEEL_NOTCH, 120)
+})

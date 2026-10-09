@@ -65,6 +65,7 @@ Grid {
         spacing: Style.space(10)
 
         Text {
+          textFormat: Text.PlainText
           text: monthCell.modelData.short.toUpperCase()
           color: {
             if (!root.chrome) return "transparent"

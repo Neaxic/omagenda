@@ -55,6 +55,11 @@ Item {
 
   // --- settings ---------------------------------------------------------------
   readonly property string barMode: Model.normalizeBarMode(setting("barMode", "next"))
+  // The user's own format, used only in "custom" mode. Kept raw: a preset never
+  // overwrites it, so trying one and coming back finds it as it was left.
+  readonly property string barFormat: String(setting("barFormat", ""))
+  // What is actually rendered, preset or custom, and whether it holds a clock.
+  readonly property string barFormatText: Model.barFormatFor(barMode, barFormat)
   readonly property string barIcon: String(setting("barIcon", "calendar"))
   readonly property int barMaxTitle: Math.round(setting("barMaxTitle", 18))
   readonly property bool weekStartsMonday: setting("weekStartsMonday", true) !== false
@@ -99,11 +104,14 @@ Item {
     if (minutes !== nowMinutes) nowMinutes = minutes
   }
 
-  // In clock mode the bar is a wall clock, so the tick has to land just after
-  // the minute turns rather than up to 20s later. Every other mode only needs
-  // the minute to be roughly right, and a plain 20s beat keeps it cheap.
+  // With a clock on the bar the tick has to land just after the minute turns
+  // rather than up to 20s later. That is the clock mode, and any custom format
+  // naming a clock token — otherwise the minute only has to be roughly right,
+  // and a plain 20s beat keeps it cheap.
+  readonly property bool barTracksClock: Model.barFormatWantsClock(barFormatText)
+
   function tickInterval() {
-    if (barMode !== "clock") return 20000
+    if (!barTracksClock) return 20000
     var now = new Date()
     return (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 200
   }
@@ -120,9 +128,11 @@ Item {
     }
   }
 
-  // Switching into or out of clock mode re-times the beat; assigning the
-  // interval restarts the timer, which is what we want either way.
-  onBarModeChanged: ticker.interval = root.tickInterval()
+  // Gaining or losing a clock on the bar re-times the beat; assigning the
+  // interval restarts the timer, which is what we want either way. This watches
+  // the resolved format rather than the mode, because editing a custom format is
+  // the other way a clock arrives.
+  onBarTracksClockChanged: ticker.interval = root.tickInterval()
 
   // --- view state -------------------------------------------------------------
   // The grid rolls: it opens on the week `anchorISO` falls in and runs forward.
@@ -138,9 +148,15 @@ Item {
   property bool daySelected: true
 
   // "weeks" is the rolling window; "month" expands it to the whole month the
-  // selected day sits in. Not persisted: the popup opens on the window again,
-  // which is the view that answers "what is coming".
-  property string gridMode: "weeks"    // weeks | month
+  // selected day sits in. The mode itself is live view state — the WEEKS |
+  // MONTH switch moves it, and that move is deliberately not written to disk —
+  // so the setting is only where it starts, every time the shell comes up.
+  readonly property string opensOn:
+    String(setting("gridMode", "month")) === "weeks" ? "weeks" : "month"
+  property string gridMode: opensOn    // weeks | month
+  // Changing the setting takes effect at once, even after the switch has been
+  // used (which replaces the binding above).
+  onOpensOnChanged: gridMode = opensOn
 
   function setGridMode(mode) {
     var next = String(mode) === "month" ? "month" : "weeks"
@@ -346,8 +362,9 @@ Item {
 
 
   readonly property string barText: Model.barLabel({
-    mode: barMode, next: next, todayISO: todayISO, nowMinutes: nowMinutes,
-    todayCount: todayEvents.length, use24: use24Hour, maxTitle: barMaxTitle
+    mode: barMode, format: barFormat, next: next, todayISO: todayISO,
+    nowMinutes: nowMinutes, todayCount: todayEvents.length,
+    upcomingCount: upcomingEvents.length, use24: use24Hour, maxTitle: barMaxTitle
   })
 
   readonly property string tooltip: Model.tooltipText({
@@ -1195,6 +1212,27 @@ Item {
     function barMode(value: string): string {
       root.persistSettings({ barMode: Model.normalizeBarMode(value) })
       return root.barMode
+    }
+
+    // With no argument, the format the bar is rendering — preset or custom. With
+    // one, the custom format, which also switches the mode to custom: a format
+    // nothing reads would come back as a bug report. A bad token is refused
+    // rather than stored, so the bar cannot be left showing a typo.
+    function barFormat(value: string): string {
+      if (value === "") return root.barFormatText
+      var issue = Model.barFormatIssue(value)
+      if (issue !== "") return issue
+      root.persistSettings({ barFormat: value, barMode: "custom" })
+      return root.barFormatText
+    }
+
+    // What a format may name. The field in the popup is a poor place to discover
+    // this from, so the list lives where a format is easiest to type.
+    function barTokens(): string {
+      var lines = []
+      for (var i = 0; i < Model.BAR_TOKENS.length; i++)
+        lines.push("{" + Model.BAR_TOKENS[i].key + "}\t" + Model.BAR_TOKENS[i].note)
+      return lines.join("\n")
     }
 
     function setOption(key: string, value: string): string {

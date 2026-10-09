@@ -77,6 +77,7 @@ had Google sync on, hit **DISCONNECT** on the calendars page first.
 |---------------|---------------------------------------------------------------------|
 | Bar           | Left click opens, right click jumps to today, middle click starts a new event |
 | Grid          | Click a day to select it, double click to add one there             |
+| Scroll        | Rolls the grid a week at a time, a month when it is expanded        |
 | `‹` `›`       | Roll the window a week                                              |
 | `«` `»`       | Page a month, keeping the day of the month                          |
 | WEEKS / MONTH | Roll three weeks, or expand to the whole month                      |
@@ -127,22 +128,55 @@ Defaults are left out of the file, so editing it by hand stays pleasant.
 ## Settings
 
 **SETTINGS** in the footer, or `s`. What the bar shows and which icon it wears,
-where the week starts, week numbers, how many weeks the grid rolls, 12- or
-24-hour times, where event colours come from, and the face that sets the
-headlines. Everything is also inline on the plugin's entry in
+where the week starts, week numbers, which grid it opens on and how many weeks
+the rolling one shows, 12- or 24-hour times, where event colours come from, and
+the face that sets the headlines. Everything is also inline on the plugin's entry in
 `~/.config/omarchy/shell.json` if you would rather type it:
 
 | Key                | Default    | Meaning                                           |
 |--------------------|------------|---------------------------------------------------|
-| `barMode`          | `next`     | `next`, `date`, `count`, `clock`, `icon`          |
+| `barMode`          | `next`     | `next`, `date`, `count`, `clock`, `icon`, `custom` |
+| `barFormat`        | *(empty)*  | Your own bar line, used when `barMode` is `custom` |
 | `barIcon`          | `calendar` | `calendar`, `month`, `today`, `blank`, `clock`, `none` |
 | `barMaxTitle`      | `18`       | Longest event title in the bar                    |
 | `displayFont`      | `auto`     | `auto` picks an installed grotesque, `theme` keeps the bar's font, or name a family |
 | `weekStartsMonday` | `true`     | Monday-first grid                                 |
 | `showWeekNumbers`  | `true`     | ISO week column                                   |
+| `gridMode`         | `month`    | Which grid the popup opens on: `month` or `weeks` |
 | `weeksShown`       | `3`        | Weeks the grid rolls, counting yours (1–8)        |
 | `use24Hour`        | `true`     | 24-hour times                                     |
 | `eventPalette`     | `spread`   | `spread` rotates six hues off your theme's accent; `theme` uses its literal colours |
+
+### Writing your own bar line
+
+Set **Shows** to **CUSTOM** and a format field appears, with a live preview of
+what it renders to. The four modes above are only the shapes worth naming — the
+field takes anything:
+
+```
+[{next.when} {next.title}] || {today.date}      what NEXT does
+{today.day} {today.d}/{today.m} {clock.time}    what CLOCK does
+wk{today.week} · {now:%a %-d/%-m %H:%M}         something neither of them does
+{today.wday}[ · {next.in} {next.title:12}]      the next thing, and how long you have
+```
+
+The whole grammar is four rules:
+
+- `{next.title}` is a token. `{next.title:12}` caps it at 12 characters,
+  `:upper` and `:lower` change its case.
+- `[ … ]` is a group. It drops out whole if a token inside it has nothing to
+  say, so a separator is never left holding up an empty space.
+- `a || b` are alternatives, tried left to right. The first that renders
+  anything wins — that is how NEXT shows the date when nothing is coming up.
+- `{now:%A %-d/%-m}` is strftime, for a date or time shape no token names.
+
+Double a brace or bracket for a literal one. A token that is not one of ours
+renders as itself, so a typo shows up on the bar rather than a blank space.
+
+`omarchy-shell omagenda barTokens` lists every token, and
+`omarchy-shell omagenda barFormat '<format>'` sets one from the terminal, which
+beats typing a long line into a panel. It refuses a format naming a token that
+does not exist rather than storing it.
 
 ## Not yet
 

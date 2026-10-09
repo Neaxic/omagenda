@@ -15,13 +15,19 @@ Column {
   property var chrome: null
 
   property string barMode: "next"
+  property string barFormat: ""
   property string barIcon: "calendar"
   property int barMaxTitle: 18
+  // Everything Model.barLabel needs, straight off the service, so the field can
+  // show what a format renders to before it is saved. A preview off real values
+  // is the only way to tell "{today.mon}" from "{today.month}" at a glance.
+  property var previewInputs: ({})
   property string displayFont: "auto"
   property string displayFamily: ""      // what "auto" actually resolved to
   property bool weekStartsMonday: true
   property bool showWeekNumbers: true
   property int weeksShown: 3
+  property string opensOn: "month"
   property string eventPalette: "spread"
   property bool use24Hour: true
 
@@ -31,9 +37,25 @@ Column {
   // (key, value) straight off the manifest's schema — the page never invents a
   // setting the widget does not declare.
   signal optionChanged(string key, var value)
+
   signal calendarsRequested()
   signal eventsFileRequested()
   signal closed()
+
+  // While the format field has focus the page's letter shortcuts have to stand
+  // down, or typing a "c" would open the calendars instead of a character. Same
+  // contract the compose form has with the panel.
+  readonly property bool anyFieldFocused: formatField.focused
+
+  // Saved on Enter or on leaving the field rather than on every keystroke: a
+  // format is unfinished for most of the time it is being typed, and each save
+  // is a write to shell.json. A format naming a token we do not have is never
+  // stored — the line under the field says so instead.
+  function saveFormat() {
+    if (root.formatIssue !== "") return
+    if (formatField.text === root.barFormat) return
+    root.optionChanged("barFormat", formatField.text)
+  }
 
   spacing: Style.space(20)
 
@@ -45,6 +67,30 @@ Column {
                                  : { key: icon.key, glyph: icon.glyph })
     }
     return out
+  }
+
+  // What the format in the field renders to right now, and what is wrong with it.
+  // Both follow the field rather than the saved setting: they are there to be
+  // read while typing.
+  property string draftFormat: ""
+  readonly property string formatIssue: Model.barFormatIssue(root.draftFormat)
+  readonly property string formatPreview: {
+    if (root.formatIssue !== "") return ""
+    var inputs = {}
+    for (var key in root.previewInputs) inputs[key] = root.previewInputs[key]
+    inputs.mode = "custom"
+    inputs.format = root.draftFormat
+    return Model.barLabel(inputs)
+  }
+
+  // Whether the format asks for a title without capping it itself, which is the
+  // only case where "Longest title" still has something to act on. Asked of the
+  // parser rather than the text, so spacing inside the braces does not matter.
+  readonly property bool capsATitle: {
+    var tokens = Model.barFormatTokens(root.barFormat)
+    for (var i = 0; i < tokens.length; i++)
+      if (tokens[i].name === "next.title" && !/^\d+$/.test(tokens[i].arg)) return true
+    return false
   }
 
   // "auto" and "theme" are the two the page can offer; a named family is shown
@@ -59,6 +105,7 @@ Column {
 
   // --- heading --------------------------------------------------------------
   Text {
+    textFormat: Text.PlainText
     text: "SETTINGS"
     color: root.chrome ? root.chrome.dim : "transparent"
     font.family: root.chrome ? root.chrome.fontFamily : "monospace"
@@ -78,6 +125,7 @@ Column {
     spacing: 0
 
     Text {
+      textFormat: Text.PlainText
       text: "IN THE BAR"
       bottomPadding: Style.space(10)
       color: root.chrome ? root.chrome.dimmer : "transparent"
@@ -99,9 +147,68 @@ Column {
           { key: "date", label: "DATE" },
           { key: "count", label: "COUNT" },
           { key: "clock", label: "CLOCK" },
-          { key: "icon", label: "ICON" }
+          { key: "icon", label: "ICON" },
+          { key: "custom", label: "CUSTOM" }
         ]
-        onPicked: function(key) { root.optionChanged("barMode", key) }
+        // Arriving at CUSTOM with nothing written seeds the field with the shape
+        // the bar is showing right now, so the first thing you see is what you
+        // already had and can edit — never a blank line you have to guess at.
+        onPicked: function(key) {
+          if (key === "custom" && Model.trim(root.barFormat) === "")
+            root.optionChanged("barFormat", Model.barFormatFor(root.barMode, ""))
+          root.optionChanged("barMode", key)
+        }
+      }
+    }
+
+    // A format needs the width of the page, not the right-hand column of a row,
+    // and it is only worth showing in the mode that reads it.
+    Column {
+      width: parent.width
+      visible: root.barMode === "custom"
+      topPadding: Style.space(16)
+      bottomPadding: Style.space(16)
+      spacing: Style.space(6)
+
+      FormField {
+        id: formatField
+        width: parent.width
+        chrome: root.chrome
+        label: "FORMAT"
+        placeholder: Model.BAR_FORMATS.next
+        text: root.barFormat
+        onTextChanged: root.draftFormat = text
+        onSubmitted: { root.saveFormat(); field.focus = false }
+        // Escape puts the saved format back and hands the page its keys again,
+        // so a second Escape leaves the page as it does everywhere else.
+        onEscaped: { text = root.barFormat; field.focus = false }
+        onFocusedChanged: if (!focused) root.saveFormat()
+        Component.onCompleted: root.draftFormat = text
+      }
+
+      // One line doing two jobs: what the format says now, or why it cannot.
+      Text {
+        textFormat: Text.PlainText
+        width: parent.width
+        text: root.formatIssue !== "" ? root.formatIssue
+            : (root.formatPreview === "" ? "shows nothing" : "\u2192  " + root.formatPreview)
+        color: {
+          if (!root.chrome) return "transparent"
+          return root.formatIssue !== "" ? root.chrome.body : root.chrome.dimmer
+        }
+        font.family: root.chrome ? root.chrome.fontFamily : "monospace"
+        font.pixelSize: root.chrome ? root.chrome.labelSize : 10
+        elide: Text.ElideRight
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        width: parent.width
+        text: "{next.title} [optional] || fallback \u00b7 omarchy-shell omagenda barTokens lists them all"
+        color: root.chrome ? root.chrome.dimmer : "transparent"
+        font.family: root.chrome ? root.chrome.fontFamily : "monospace"
+        font.pixelSize: root.chrome ? root.chrome.labelSize : 10
+        wrapMode: Text.WordWrap
       }
     }
 
@@ -118,11 +225,12 @@ Column {
       }
     }
 
-    // Only "next" puts an event's title in the bar, so only "next" has a length
-    // to cap. In every other mode the row would be a control with nothing to act on.
+    // Only a title in the bar has a length to cap — the "next" preset, or a
+    // custom format that asks for one without capping it itself. In every other
+    // mode the row would be a control with nothing to act on.
     SettingRow {
       width: parent.width
-      visible: root.barMode === "next"
+      visible: root.barMode === "next" || (root.barMode === "custom" && root.capsATitle)
       chrome: root.chrome
       label: "Longest title"
 
@@ -143,6 +251,7 @@ Column {
     spacing: 0
 
     Text {
+      textFormat: Text.PlainText
       text: "THE CALENDAR"
       bottomPadding: Style.space(10)
       color: root.chrome ? root.chrome.dimmer : "transparent"
@@ -174,6 +283,19 @@ Column {
         current: root.showWeekNumbers ? "on" : "off"
         options: [{ key: "on", label: "ON" }, { key: "off", label: "OFF" }]
         onPicked: function(key) { root.optionChanged("showWeekNumbers", key === "on") }
+      }
+    }
+
+    SettingRow {
+      width: parent.width
+      chrome: root.chrome
+      label: "Opens on"
+
+      SegmentedToggle {
+        chrome: root.chrome
+        current: root.opensOn
+        options: [{ key: "month", label: "MONTH" }, { key: "weeks", label: "WEEKS" }]
+        onPicked: function(key) { root.optionChanged("gridMode", key) }
       }
     }
 
@@ -248,6 +370,7 @@ Column {
       onClicked: root.calendarsRequested()
 
       Text {
+        textFormat: Text.PlainText
         text: "\u{F0142}"                          // chevron-right
         color: root.chrome ? root.chrome.dim : "transparent"
         font.family: root.chrome ? root.chrome.glyphFamily : "monospace"
@@ -264,6 +387,7 @@ Column {
       onClicked: root.eventsFileRequested()
 
       Text {
+        textFormat: Text.PlainText
         text: "\u{F03CC}"                          // open-in-new
         color: root.chrome ? root.chrome.dim : "transparent"
         font.family: root.chrome ? root.chrome.glyphFamily : "monospace"

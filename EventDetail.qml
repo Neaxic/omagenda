@@ -24,6 +24,7 @@ Column {
     spacing: Style.space(10)
 
     Text {
+      textFormat: Text.PlainText
       text: root.occurrence ? Model.dayHeading(root.occurrence.iso) : ""
       color: root.chrome ? root.chrome.dim : "transparent"
       font.family: root.chrome ? root.chrome.fontFamily : "monospace"
@@ -45,6 +46,7 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width - (parent.children[0].visible ? Style.space(24) : 0)
         text: root.occurrence ? root.occurrence.title : ""
         color: root.chrome ? root.chrome.headline : "transparent"
@@ -103,6 +105,7 @@ Column {
         spacing: Style.space(16)
 
         Text {
+          textFormat: Text.PlainText
           width: Style.space(96)
           text: modelData.label
           color: root.chrome ? root.chrome.dimmer : "transparent"
@@ -112,6 +115,7 @@ Column {
         }
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width - Style.space(96) - Style.space(16)
           text: modelData.value
           color: root.chrome ? root.chrome.body : "transparent"

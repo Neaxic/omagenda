@@ -29,6 +29,7 @@ Column {
   spacing: Style.space(6)
 
   Text {
+    textFormat: Text.PlainText
     text: root.label
     color: root.chrome ? root.chrome.dim : "transparent"
     font.family: root.chrome ? root.chrome.fontFamily : "monospace"
@@ -74,6 +75,7 @@ Column {
     }
 
     Text {
+      textFormat: Text.PlainText
       id: trailing
       visible: root.trailingGlyph !== ""
       anchors.right: parent.right

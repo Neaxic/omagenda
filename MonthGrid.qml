@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import "Model.js" as Model
 
 // The month grid from the mockup: a week-number gutter, seven columns, hairline
 // rules between rows and columns, day numbers set left and centred in their row,
@@ -20,6 +21,10 @@ Column {
 
   signal daySelected(string iso)
   signal dayActivated(string iso)   // double click: straight into the day
+  // One notch of the wheel is one step of whatever the grid shows — the next
+  // week on the rolling window, the next month when it is expanded. The grid
+  // does no date arithmetic, so it only says which way and by how much.
+  signal stepped(int delta)
 
   readonly property real gutterWidth: showWeekNumbers ? (chrome ? chrome.gutter : 33) : 0
   readonly property real cellWidth: (width - gutterWidth) / 7
@@ -43,6 +48,31 @@ Column {
   readonly property real rowHeight: (chrome ? chrome.rowHeight : 63) + laneCount * laneStep
 
   spacing: 0
+
+  // Scrolling pages the grid, one week at a time. The banking lives in
+  // Model.wheelSteps so a trackpad's fractions of a notch do not fly through a
+  // year; this only decides which way.
+  property real wheelAccum: 0
+
+  // Returns whether the wheel was used, which is also what the day cells'
+  // mouse areas hand back as `accepted`.
+  function applyWheel(deltaY) {
+    // A horizontal wheel or a touchpad side-scroll reports y === 0; without
+    // this every one of them would read as "next week".
+    if (!deltaY) return false
+    var banked = Model.wheelSteps(wheelAccum, deltaY)
+    wheelAccum = banked.accum
+    if (banked.steps !== 0) stepped(banked.steps)
+    return true
+  }
+
+  // Two ways in, because a wheel event goes to the topmost item under the
+  // pointer and stops at the first one that takes it: over a day it is that
+  // day's MouseArea (below), and over the week-number gutter or the gaps it
+  // falls through to here.
+  WheelHandler {
+    onWheel: function(event) { root.applyWheel(event.angleDelta.y) }
+  }
 
   // The grid's top rule reads a touch stronger than the rules inside it.
   Rectangle {
@@ -75,6 +105,7 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         x: 0
         visible: root.showWeekNumbers
         opacity: weekRow.fade
@@ -164,6 +195,7 @@ Column {
             }
 
             Text {
+              textFormat: Text.PlainText
               x: root.chrome ? root.chrome.cellPad : 12
               anchors.verticalCenter: parent.verticalCenter
               anchors.verticalCenterOffset: dayCell.day.count > 0 ? -Style.space(5) : 0
@@ -217,6 +249,7 @@ Column {
               cursorShape: Qt.PointingHandCursor
               onClicked: root.daySelected(dayCell.day.iso)
               onDoubleClicked: root.dayActivated(dayCell.day.iso)
+              onWheel: function(wheel) { wheel.accepted = root.applyWheel(wheel.angleDelta.y) }
             }
           }
         }

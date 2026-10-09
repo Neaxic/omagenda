@@ -45,6 +45,7 @@ Item {
     spacing: Style.space(3)
 
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       text: root.label
       color: root.chrome ? root.chrome.body : "transparent"
@@ -54,6 +55,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       visible: root.note !== ""
       text: root.note

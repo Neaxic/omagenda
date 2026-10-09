@@ -54,6 +54,7 @@ Item {
     spacing: Style.space(8)
 
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       text: root.occurrence ? root.occurrence.title : ""
       color: root.chrome ? root.chrome.body : "transparent"
@@ -66,6 +67,7 @@ Item {
       spacing: Style.space(6)
 
       Text {
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         text: root.occurrence && root.occurrence.spans
           ? "\u{F0679}"                                     // calendar-range
@@ -76,6 +78,7 @@ Item {
       }
 
       Text {
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         text: root.metaLine
         color: root.chrome ? root.chrome.dim : "transparent"
@@ -84,6 +87,7 @@ Item {
       }
 
       Text {
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         visible: root.occurrence && root.occurrence.location !== ""
         text: "  ·  "
@@ -93,6 +97,7 @@ Item {
       }
 
       Text {
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         visible: root.occurrence && root.occurrence.location !== ""
         text: "\u{F07D9}"                                  // map-marker-outline
@@ -102,6 +107,7 @@ Item {
       }
 
       Text {
+        textFormat: Text.PlainText
         anchors.verticalCenter: parent.verticalCenter
         visible: root.occurrence && root.occurrence.location !== ""
         text: root.occurrence ? root.occurrence.location : ""
@@ -113,6 +119,7 @@ Item {
   }
 
   Text {
+    textFormat: Text.PlainText
     id: chevron
     anchors.right: parent.right
     anchors.rightMargin: Style.space(20)

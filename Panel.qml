@@ -74,7 +74,7 @@ Panel {
   readonly property int viewMonth: book ? book.viewMonth : new Date().getMonth()
   readonly property var weeks: book ? book.weeks : []
   readonly property string gridLabel: book ? book.gridLabel : ""
-  readonly property string gridMode: book ? book.gridMode : "weeks"
+  readonly property string gridMode: book ? book.gridMode : "month"
 
   // The local store plus every synced calendar, as the compose form's switch
   // wants them.
@@ -454,6 +454,7 @@ Panel {
         fadeLastWeek: root.gridMode === "weeks"
         onDaySelected: function(iso) { root.selectDay(iso) }
         onDayActivated: function(iso) { root.selectDay(iso); root.startCompose("") }
+        onStepped: function(delta) { root.stepGrid(delta) }
       }
 
       Item { width: 1; height: Style.space(18) }
@@ -541,6 +542,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           anchors.centerIn: parent
           text: root.gridLabel
           color: tokens.dim
@@ -637,6 +639,7 @@ Panel {
         height: Style.space(30)
 
         Text {
+          textFormat: Text.PlainText
           anchors.left: parent.left
           anchors.leftMargin: Style.space(12)
           anchors.verticalCenter: parent.verticalCenter
@@ -656,6 +659,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           anchors.centerIn: parent
           text: String(root.viewYear)
           color: tokens.dim
@@ -665,6 +669,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           anchors.right: parent.right
           anchors.rightMargin: Style.space(12)
           anchors.verticalCenter: parent.verticalCenter
@@ -746,18 +751,30 @@ Panel {
         width: parent.width
         chrome: tokens
         barMode: root.book ? root.book.barMode : "next"
+        barFormat: root.book ? root.book.barFormat : ""
         barIcon: String(root.setting("barIcon", "calendar"))
         barMaxTitle: root.book ? root.book.barMaxTitle : 18
+        // The same values the bar itself renders from, so the format field
+        // previews the real line rather than a made-up one.
+        previewInputs: root.book ? ({
+          next: root.book.next, todayISO: root.book.todayISO,
+          nowMinutes: root.book.nowMinutes, todayCount: root.book.todayEvents.length,
+          upcomingCount: root.book.upcomingEvents.length,
+          use24: root.book.use24Hour, maxTitle: root.book.barMaxTitle
+        }) : ({})
         displayFont: String(root.setting("displayFont", "auto"))
         displayFamily: root.displayFamily
         weekStartsMonday: root.weekStartsMonday
         showWeekNumbers: root.showWeekNumbers
         weeksShown: root.book ? root.book.weeksShown : 3
+        opensOn: root.book ? root.book.opensOn : "month"
         eventPalette: root.book ? root.book.eventPalette : "spread"
         use24Hour: root.use24Hour
         calendarsNote: root.calendarsNote
         eventsPath: root.eventsPath
         onOptionChanged: function(key, value) { root.setOption(key, value) }
+        onAnyFieldFocusedChanged: root.textFocus = anyFieldFocused
+        Component.onDestruction: root.textFocus = false
         onCalendarsRequested: root.showCalendars("settings")
         onEventsFileRequested: root.openFile()
         onClosed: root.backFromPage()

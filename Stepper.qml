@@ -33,6 +33,7 @@ Row {
   }
 
   Text {
+    textFormat: Text.PlainText
     anchors.verticalCenter: parent.verticalCenter
     width: Style.space(46)
     horizontalAlignment: Text.AlignHCenter
