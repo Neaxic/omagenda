@@ -103,6 +103,46 @@ class ReadCapped(unittest.TestCase):
         self.assertEqual(code, 7)
         self.assertIn("longer to read", payload["error"])
 
+    def test_a_real_socket_trickle_is_stopped_on_time(self):
+        """The same over HTTP, where a buffered read would wait out the chunk.
+
+        One byte every 0.1 s never trips the socket timeout. The clock must
+        stop it near its one second, not once 64 KB has dribbled in.
+        """
+        import socket
+        import urllib.request
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        done = threading.Event()
+
+        def serve():
+            conn, _ = listener.accept()
+            conn.recv(4096)
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\n\r\n")
+            try:
+                while not done.is_set():
+                    conn.sendall(b"x")
+                    time.sleep(0.1)
+            except OSError:
+                pass
+            finally:
+                conn.close()
+
+        threading.Thread(target=serve, daemon=True).start()
+        try:
+            reply = urllib.request.urlopen(
+                "http://127.0.0.1:%d/" % listener.getsockname()[1], timeout=45)
+            started = time.monotonic()
+            code, payload = refusal(lambda: gcal.read_capped(reply, 1 << 20, seconds=1))
+            took = time.monotonic() - started
+        finally:
+            done.set()
+            listener.close()
+        self.assertEqual(code, 7)
+        self.assertIn("longer to read", payload["error"])
+        self.assertLess(took, 2)
+
     def test_a_chunked_read_still_returns_the_whole_body(self):
         # The body is now taken in pieces; it must come back joined and intact.
         body = bytes(range(256)) * ((gcal.READ_CHUNK // 256) * 3)

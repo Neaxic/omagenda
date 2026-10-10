@@ -135,10 +135,16 @@ def read_capped(stream, limit, budget=None, what="Google's reply",
     a slow sequence of pages.
     """
     deadline = budget.deadline if budget is not None else time.monotonic() + seconds
+    # read1, not read: a buffered read(n) blocks until all n bytes are in or
+    # the stream ends, so a reply arriving a byte at a time was only looked at
+    # once per READ_CHUNK — 64 KB of trickle, each byte inside the socket
+    # timeout, before the deadline was checked even once. read1 returns
+    # whatever one socket read brought.
+    take = getattr(stream, "read1", stream.read)
     chunks = []
     remaining = limit + 1
     while remaining > 0:
-        chunk = stream.read(min(READ_CHUNK, remaining))
+        chunk = take(min(READ_CHUNK, remaining))
         if not chunk:
             break
         chunks.append(chunk)
