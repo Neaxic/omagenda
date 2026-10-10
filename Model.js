@@ -610,6 +610,8 @@ function normalizeEvent(raw) {
     // only touches the colour when it really changed — Google has colours this
     // palette has no name for, and an edit here must not quietly clear one.
     colorId: trim(raw.colorId),
+    // A remote event with no title of its own, shown as NO_TITLE.
+    untitled: raw.untitled === true,
     repeat: normalizeRepeat(raw.repeat),
     // "" = forever. Only meaningful with a repeat.
     until: isISODate(raw.until) && fromISO(raw.until) ? trim(raw.until) : ""
@@ -637,7 +639,7 @@ function ensureIds(events, randomFn) {
       id: id, title: e.title, date: e.date, days: e.days, time: e.time,
       durationMin: e.durationMin, notes: e.notes, location: e.location,
       color: e.color, source: e.source, remoteId: e.remoteId, etag: e.etag,
-      colorId: e.colorId, repeat: e.repeat, until: e.until
+      colorId: e.colorId, untitled: e.untitled, repeat: e.repeat, until: e.until
     })
   }
   return out
@@ -708,6 +710,8 @@ function removeEvent(events, id) {
 //
 // The one trap is that Google's end is **exclusive** for all-day events:
 // 26th to 28th means the 26th and 27th, a two-day run.
+var NO_TITLE = "(no title)"
+
 function parseGoogleEvent(raw, sourceId) {
   if (!raw || typeof raw !== "object") return null
   if (raw.status === "cancelled") return null
@@ -747,7 +751,10 @@ function parseGoogleEvent(raw, sourceId) {
 
   return normalizeEvent({
     id: trim(sourceId) + "/" + trim(raw.id),
-    title: trim(raw.summary) || "(no title)",
+    title: trim(raw.summary) || NO_TITLE,
+    // Google allows an event with no title; the placeholder above is only for
+    // showing it, and must never be written back as if someone had typed it.
+    untitled: trim(raw.summary) === "",
     date: date,
     days: days,
     time: time,
@@ -795,10 +802,12 @@ function parseGoogleEvents(payload, sourceId) {
 // stores the instant we meant rather than re-reading it in another zone.
 function toGoogleEvent(event) {
   var out = {
-    summary: event.title,
     location: event.location || "",
     description: event.notes || ""
   }
+  // Left out while the event still shows the placeholder, so moving an
+  // untitled event does not give it the title "(no title)" on Google.
+  if (!(event.untitled && event.title === NO_TITLE)) out.summary = event.title
   // Only when it changed: an unchanged colour is left out of the patch, so a
   // Graphite or Tangerine event keeps the colour Google gave it. Picking "none"
   // on an event that had one sends null, which is how a patch clears a field.

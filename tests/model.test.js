@@ -830,3 +830,20 @@ test("wheel deltas bank into whole steps, scrolling down going forward", () => {
   assert.deepEqual(M.wheelSteps(-80, 0), { steps: 0, accum: -80 })
   assert.equal(M.WHEEL_NOTCH, 120)
 })
+
+test("an untitled Google event is shown with a placeholder but never written back with it", () => {
+  const e = M.parseGoogleEvent({ id: "u", start: { date: "2026-09-26" }, end: { date: "2026-09-27" } }, "work")
+  assert.equal(e.title, "(no title)")
+  assert.equal(e.untitled, true)
+  // Moved to another day without touching the title: no summary in the patch.
+  const moved = M.toGoogleEvent(Object.assign({}, e, { date: "2026-09-28" }))
+  assert.equal("summary" in moved, false)
+  // Given a real title, it goes out.
+  assert.equal(M.toGoogleEvent(Object.assign({}, e, { title: "Standup" })).summary, "Standup")
+  // A titled event is unaffected, even one literally called "(no title)".
+  const named = M.parseGoogleEvent({ id: "n", summary: "(no title)", start: { date: "2026-09-26" } }, "work")
+  assert.equal(named.untitled, false)
+  assert.equal(M.toGoogleEvent(named).summary, "(no title)")
+  // And the flag survives the cache round trip.
+  assert.equal(M.normalizeEvent(JSON.parse(JSON.stringify(e))).untitled, true)
+})

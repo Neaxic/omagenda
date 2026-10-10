@@ -479,6 +479,8 @@ Item {
         // The version we last saw, so the patch is refused rather than written
         // over a change someone else made on Google in the meantime.
         raw.etag = existing.etag
+        // Still untitled on Google unless the form's title was actually changed.
+        raw.untitled = existing.untitled === true
         // The colour id Google has on it, so the patch can tell "unchanged"
         // from "cleared" — without it, picking "no colour" wrote nothing.
         raw.colorId = existing.colorId
