@@ -50,6 +50,7 @@ have seen the pages we refused. tests/gcal.test.py holds those ceilings.
 
 import base64
 import hashlib
+import html
 import http.server
 import json
 import os
@@ -58,7 +59,6 @@ import socketserver
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import urllib.error
 import urllib.parse
@@ -326,25 +326,55 @@ def pkce_pair():
     return verifier, challenge
 
 
+LOGIN_SECONDS = 300          # how long the loopback waits for the browser
+CALLBACK_SECONDS = 10        # how long one connection to it may take
+
+
 class CallbackHandler(http.server.BaseHTTPRequestHandler):
+    """The loopback end of the redirect.
+
+    Only a request carrying this login's `state` is taken as the answer. The
+    port is open to every process on the machine, and when the first request
+    of any kind ended the wait, a stray connection — a port scan, a favicon
+    fetch, another account — failed the login before the browser came back.
+    """
+
+    expected_state = None
     result = {}
+    # Per-connection socket timeout, so one that connects and says nothing
+    # cannot hold the single-threaded server until the login gives up.
+    timeout = CALLBACK_SECONDS
 
     def do_GET(self):  # noqa: N802 - http.server's naming
         query = urllib.parse.urlparse(self.path).query
-        params = urllib.parse.parse_qs(query)
-        CallbackHandler.result = {key: values[0] for key, values in params.items()}
-        ok = "code" in CallbackHandler.result
+        params = {key: values[0] for key, values in urllib.parse.parse_qs(query).items()}
+        if not CallbackHandler.expected_state or not secrets.compare_digest(
+                params.get("state", ""), CallbackHandler.expected_state):
+            self.send_error(404)
+            return
+        CallbackHandler.result = params
+        ok = "code" in params
+        message = "Omagenda is connected. You can close this tab." if ok \
+            else "Authorisation failed: " + params.get("error", "no code")
+        body = ("<!doctype html><meta charset=utf-8>"
+                "<body style='background:#0b0b0c;color:#e9e9e6;font:16px system-ui;"
+                "display:grid;place-items:center;height:100vh;margin:0'>"
+                # The error comes off the query string, which anyone who can
+                # reach the port writes; it is text, never markup.
+                "<p>%s</p>" % html.escape(message)).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        message = "Omagenda is connected. You can close this tab." if ok \
-            else "Authorisation failed: " + CallbackHandler.result.get("error", "no code")
-        self.wfile.write(
-            ("<!doctype html><meta charset=utf-8>"
-             "<body style='background:#0b0b0c;color:#e9e9e6;font:16px system-ui;"
-             "display:grid;place-items:center;height:100vh;margin:0'>"
-             "<p>%s</p>" % message).encode()
-        )
+        self.wfile.write(body)
+
+    def handle(self):
+        # A connection that timed out or hung up is simply over; it is not
+        # worth a traceback on the terminal of someone mid-login.
+        try:
+            super().handle()
+        except OSError:
+            pass
 
     def log_message(self, *args):
         pass
@@ -355,10 +385,23 @@ def have_tokens():
     return bool(tokens and tokens.get("refresh_token"))
 
 
+def wait_for_callback(server, seconds):
+    """Serve the loopback until the real callback lands, or `seconds` pass."""
+    deadline = time.monotonic() + seconds
+    while not CallbackHandler.result:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return
+        server.timeout = left
+        server.handle_request()
+
+
 def do_login():
     client_id, client_secret = client_credentials()
     verifier, challenge = pkce_pair()
     state = secrets.token_urlsafe(24)
+    CallbackHandler.expected_state = state
+    CallbackHandler.result = {}
 
     with socketserver.TCPServer(("127.0.0.1", 0), CallbackHandler) as server:
         port = server.server_address[1]
@@ -391,15 +434,11 @@ def do_login():
         except OSError:
             pass
 
-        thread = threading.Thread(target=server.handle_request, daemon=True)
-        thread.start()
-        thread.join(timeout=300)
+        wait_for_callback(server, LOGIN_SECONDS)
 
     result = CallbackHandler.result
     if not result:
         die("timed out waiting for the browser to come back", code=4)
-    if result.get("state") != state:
-        die("state mismatch — the callback did not come from this login", code=4)
     if "code" not in result:
         die("Google refused: " + result.get("error", "unknown"), code=4)
 

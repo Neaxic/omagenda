@@ -20,6 +20,8 @@ import sys
 import threading
 import time
 import unittest
+import urllib.error
+import urllib.parse
 from importlib.machinery import SourceFileLoader
 
 # bin/gcal has no .py suffix, so it is loaded by path rather than imported.
@@ -235,6 +237,59 @@ class ConfigDir(unittest.TestCase):
         out = printed(gcal.logout)
         self.assertFalse(os.path.exists(gcal.TOKEN_FILE))
         self.assertTrue(out["ok"])
+
+
+class Callback(unittest.TestCase):
+    """The loopback the browser is redirected to during login."""
+
+    def setUp(self):
+        self.saved = gcal.CallbackHandler.timeout
+        gcal.CallbackHandler.timeout = 0.5
+        gcal.CallbackHandler.expected_state = "the-state"
+        gcal.CallbackHandler.result = {}
+        self.server = socketserver.TCPServer(("127.0.0.1", 0), gcal.CallbackHandler)
+        self.port = self.server.server_address[1]
+        self.waiter = threading.Thread(
+            target=gcal.wait_for_callback, args=(self.server, 10), daemon=True)
+        self.waiter.start()
+
+    def tearDown(self):
+        gcal.CallbackHandler.timeout = self.saved
+        gcal.CallbackHandler.result = {"code": "stop"}
+        self.waiter.join(timeout=5)
+        self.server.server_close()
+
+    def get(self, query):
+        import urllib.request
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:%d/?%s" % (self.port, query),
+                                        timeout=5) as reply:
+                return reply.status, reply.read().decode()
+        except urllib.error.HTTPError as exc:
+            return exc.code, ""
+
+    def test_strays_do_not_end_the_wait(self):
+        import socket
+        # A connection that never speaks, then requests without the state.
+        silent = socket.create_connection(("127.0.0.1", self.port))
+        try:
+            self.assertEqual(self.get("")[0], 404)
+            self.assertEqual(self.get("code=forged&state=wrong")[0], 404)
+            self.assertEqual(gcal.CallbackHandler.result, {})
+            status, _ = self.get("code=real&state=the-state")
+        finally:
+            silent.close()
+        self.assertEqual(status, 200)
+        self.waiter.join(timeout=5)
+        self.assertFalse(self.waiter.is_alive())
+        self.assertEqual(gcal.CallbackHandler.result["code"], "real")
+
+    def test_the_error_is_shown_as_text(self):
+        status, body = self.get("state=the-state&error=" +
+                                urllib.parse.quote("<script>alert(1)</script>"))
+        self.assertEqual(status, 200)
+        self.assertNotIn("<script>", body)
+        self.assertIn("&lt;script&gt;", body)
 
 
 class FakeGoogle(http.server.BaseHTTPRequestHandler):
