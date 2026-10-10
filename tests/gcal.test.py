@@ -216,6 +216,26 @@ class ConfigDir(unittest.TestCase):
         # Nothing left lying about next to it.
         self.assertEqual(os.listdir(gcal.CONFIG_DIR), ["google-tokens.json"])
 
+    def test_logout_forgets_the_tokens_even_offline(self):
+        gcal.write_private(gcal.TOKEN_FILE, {"refresh_token": "r"})
+        saved = gcal.REVOKE_URL
+        # A closed port: the revoke cannot reach anyone.
+        gcal.REVOKE_URL = "http://127.0.0.1:9/revoke"
+        try:
+            out = printed(gcal.logout)
+        finally:
+            gcal.REVOKE_URL = saved
+        self.assertFalse(os.path.exists(gcal.TOKEN_FILE))
+        self.assertEqual(out, {"ok": True, "revoked": False})
+
+    def test_logout_clears_an_unreadable_token_file(self):
+        gcal.ensure_config_dir()
+        with open(gcal.TOKEN_FILE, "w", encoding="utf-8") as handle:
+            handle.write("{not json")
+        out = printed(gcal.logout)
+        self.assertFalse(os.path.exists(gcal.TOKEN_FILE))
+        self.assertTrue(out["ok"])
+
 
 class FakeGoogle(http.server.BaseHTTPRequestHandler):
     """Serves whatever `FakeGoogle.page` currently holds, forever.

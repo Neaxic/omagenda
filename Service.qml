@@ -535,6 +535,9 @@ Item {
   // consent screen — so the panel has something to say in the meantime.
   property bool connecting: false
   property string googleError: ""
+  // Whether a grant existed when disconnect was pressed, so a failed revoke is
+  // only reported when there was something at Google to revoke.
+  property bool hadGrant: false
 
   // Whether this copy of Omagenda has an OAuth client at all. Without one the
   // panel offers no button: a dead one that always errors is worse than saying
@@ -894,6 +897,7 @@ Item {
       saveCache()
     }
     calendarList = []
+    hadGrant = googleConnected
     logoutProc.command = [gcalBin, "logout"]
     logoutProc.running = false
     logoutProc.running = true
@@ -1036,8 +1040,21 @@ Item {
     }
   }
 
+  // The tokens are gone locally whatever this says; `revoked: false` only
+  // means Google could not be told, so the grant outlives the disconnect.
   Process {
     id: logoutProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var reply = {}
+        try { reply = JSON.parse(String(text || "{}")) } catch (e) { reply = {} }
+        if (reply.error) root.googleError = String(reply.error)
+        else if (reply.ok && reply.revoked === false && root.hadGrant)
+          root.googleError = "Disconnected here, but Google could not be reached to revoke "
+            + "access. Remove Omagenda at myaccount.google.com/permissions."
+      }
+    }
     onExited: root.askGoogle("status")
   }
 

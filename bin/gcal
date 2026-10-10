@@ -11,7 +11,7 @@ so the QML side can surface the message instead of guessing from an exit code.
   gcal connect                   login, then the calendar list, in one pass
   gcal login                     browser consent, once
   gcal status                    is there a usable token, and for what
-  gcal logout                    forget the tokens (the Google grant survives)
+  gcal logout                    forget the tokens, then revoke the grant
   gcal calendars                 the calendar list, with access roles
   gcal events <calId> [...]      changed events; --sync-token for incremental
   gcal insert <calId> <json>     create, prints the created event
@@ -437,6 +437,45 @@ def save_tokens(payload, keep_refresh=None):
     return tokens
 
 
+def logout():
+    """Forget the grant here first, then ask Google to revoke it.
+
+    In that order because the local half is the one the user can count on.
+    Revoking first meant an offline disconnect died on the network error with
+    the refresh token still on disk, while the panel had already emptied the
+    calendars and looked disconnected. Revocation is reported, not required:
+    `revoked: false` means the grant still stands at Google until the user
+    removes it from their account.
+    """
+    refresh = ""
+    try:
+        with open(TOKEN_FILE, "r", encoding="utf-8") as handle:
+            tokens = json.load(handle)
+        if isinstance(tokens, dict):
+            refresh = str(tokens.get("refresh_token") or "")
+    except (OSError, ValueError):
+        # Missing or unreadable: there is nothing to revoke, but whatever is
+        # there still goes.
+        pass
+    try:
+        os.remove(TOKEN_FILE)
+    except FileNotFoundError:
+        pass
+
+    if not refresh:
+        return emit({"ok": True, "revoked": False})
+    request = urllib.request.Request(
+        REVOKE_URL, data=urllib.parse.urlencode({"token": refresh}).encode(),
+        method="POST")
+    request.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            revoked = 200 <= response.status < 300
+    except (urllib.error.URLError, OSError):
+        revoked = False
+    emit({"ok": True, "revoked": revoked})
+
+
 def access_token(force=False):
     """The access token to send, refreshing it when it is due — or when asked.
 
@@ -614,14 +653,7 @@ def main(argv):
         return login()
 
     if command == "logout":
-        tokens = read_json(TOKEN_FILE) or {}
-        if tokens.get("refresh_token"):
-            post_form(REVOKE_URL, {"token": tokens["refresh_token"]})
-        try:
-            os.remove(TOKEN_FILE)
-        except FileNotFoundError:
-            pass
-        return emit({"ok": True})
+        return logout()
 
     if command == "status":
         tokens = read_json(TOKEN_FILE)

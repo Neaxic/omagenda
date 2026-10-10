@@ -97,7 +97,7 @@ unverified app still works for its own author, warning screen and all.
 bin/gcal status              # is there a client, where from, and a live grant?
 bin/gcal connect             # consent if needed, then the calendar list
 bin/gcal calendars           # ids, names, access roles
-bin/gcal logout              # forget and revoke
+bin/gcal logout              # forget here, then revoke at Google
 ```
 
 and from the shell:
