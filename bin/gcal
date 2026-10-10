@@ -228,8 +228,16 @@ def read_json(path, default=None):
         die("could not read %s: %s" % (os.path.basename(path), exc))
 
 
+def ensure_config_dir():
+    # 0700 whether this call creates it or not: `gcal connect` may well run
+    # before the shell ever has, and the directory it leaves behind is the one
+    # the plugin's 0644 event and cache files land in later.
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    os.chmod(CONFIG_DIR, 0o700)
+
+
 def write_private(path, data):
-    os.makedirs(CONFIG_DIR, exist_ok=True)
+    ensure_config_dir()
     tmp = path + ".tmp"
     # Create with 0600 from the start rather than chmod-ing after: the tokens
     # must never exist, even briefly, as a world-readable file.

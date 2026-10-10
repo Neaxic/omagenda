@@ -1121,10 +1121,22 @@ Item {
     }
   }
 
+  // mkdir -m only sets the mode of a directory it creates. One that already
+  // exists — made by `bin/gcal connect` before the shell first ran, or by an
+  // older build at 0755 — keeps whatever it had, so tighten it on every start.
+  // Fails harmlessly on first run, before the directory exists.
+  Process {
+    id: chmodProc
+    command: ["chmod", "700", root.configDir]
+  }
+
   // Ask once at startup whether this build has a Google client and whether the
   // user has already granted it, so the calendars page knows what to offer
   // before anyone presses anything.
-  Component.onCompleted: root.askGoogle("status")
+  Component.onCompleted: {
+    chmodProc.running = true
+    root.askGoogle("status")
+  }
 
   // --- IPC --------------------------------------------------------------------
   // `omarchy-shell omagenda <method> [args]`. Handy for testing without

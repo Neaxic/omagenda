@@ -159,6 +159,40 @@ class BudgetCeilings(unittest.TestCase):
         self.assertIn("Nothing was saved", payload["error"])
 
 
+class ConfigDir(unittest.TestCase):
+    """The directory everything private lands in, whoever creates it first."""
+
+    def setUp(self):
+        import tempfile
+        self.root = tempfile.mkdtemp()
+        self.saved = gcal.CONFIG_DIR, gcal.TOKEN_FILE
+        gcal.CONFIG_DIR = os.path.join(self.root, "omagenda")
+        gcal.TOKEN_FILE = os.path.join(gcal.CONFIG_DIR, "google-tokens.json")
+        self.umask = os.umask(0o022)
+
+    def tearDown(self):
+        import shutil
+        os.umask(self.umask)
+        gcal.CONFIG_DIR, gcal.TOKEN_FILE = self.saved
+        shutil.rmtree(self.root)
+
+    def mode(self, path):
+        return os.stat(path).st_mode & 0o777
+
+    def test_created_private_under_an_ordinary_umask(self):
+        gcal.write_private(gcal.TOKEN_FILE, {"refresh_token": "r"})
+        self.assertEqual(self.mode(gcal.CONFIG_DIR), 0o700)
+        self.assertEqual(self.mode(gcal.TOKEN_FILE), 0o600)
+
+    def test_an_existing_open_directory_is_tightened(self):
+        # `gcal connect` before the shell's first start, or an older build,
+        # leaves a 0755 directory behind; mkdir -m would not touch it.
+        os.makedirs(gcal.CONFIG_DIR, mode=0o755)
+        os.chmod(gcal.CONFIG_DIR, 0o755)
+        gcal.write_private(gcal.TOKEN_FILE, {"refresh_token": "r"})
+        self.assertEqual(self.mode(gcal.CONFIG_DIR), 0o700)
+
+
 class FakeGoogle(http.server.BaseHTTPRequestHandler):
     """Serves whatever `FakeGoogle.page` currently holds, forever.
 
