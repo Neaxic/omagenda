@@ -577,6 +577,10 @@ Item {
   }
 
   function runSync() {
+    // A calendar removed, or the whole account disconnected, after its job was
+    // queued is not fetched: the cache it would land in has already been cleared.
+    while (syncQueue.length > 0 && !sourceById(syncQueue[0].id))
+      syncQueue = syncQueue.slice(1)
     if (syncQueue.length === 0) {
       syncing = false
       lastSynced = Date.now()
@@ -601,6 +605,16 @@ Item {
   function finishSync(text) {
     var job = syncQueue.length > 0 ? syncQueue[0] : null
     if (!job) { syncing = false; return }
+
+    // The same check for the pull that was already running when its calendar
+    // went. Without it a disconnect mid-sync put that calendar's events back
+    // in memory, and the end of the pass saved them into cache.json again.
+    if (!sourceById(job.id)) {
+      syncQueue = syncQueue.slice(1)
+      runSync()
+      return
+    }
+
     var page = Model.parseGoogleEvents(text, job.id)
 
     if (!page.ok) {
@@ -678,7 +692,7 @@ Item {
       // Nothing parseable came back, so the write did not happen: pulling the
       // calendar now would only confirm the event is still missing.
       else if (String(text || "").trim() === "") { /* onExited said why */ }
-      else if (job.sourceId) {
+      else if (job.sourceId && sourceById(job.sourceId)) {
         // Pull the source so the cache matches what Google now holds.
         syncQueue = syncQueue.concat([{ id: job.sourceId, calendarId: job.calendarId, full: false }])
         if (!syncing) { syncing = true; runSync() }
@@ -897,6 +911,11 @@ Item {
       saveCache()
     }
     calendarList = []
+    // Nothing still waiting may run against a grant that is going. The pull
+    // already in flight stays at the head of the queue so its output is still
+    // matched to its own job; finishSync then discards it.
+    syncQueue = syncing ? syncQueue.slice(0, 1) : []
+    writeQueue = writing ? writeQueue.slice(0, 1) : []
     hadGrant = googleConnected
     logoutProc.command = [gcalBin, "logout"]
     logoutProc.running = false
