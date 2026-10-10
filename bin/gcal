@@ -18,12 +18,22 @@ so the QML side can surface the message instead of guessing from an exit code.
   gcal patch  <calId> <id> <json>
   gcal delete <calId> <id>
 
-Anywhere a <json> body or a sync token is taken, "-" means "read it from stdin"
-instead, and that is what the plugin always passes. Arguments are not private:
-/proc/<pid>/cmdline is world-readable, so an event title, location or set of
-notes passed on the command line is readable by every local user for as long as
-the write runs. Everything else the plugin stores is 0600 inside a 0700
-directory, and stdin keeps the request body on the same side of that line.
+Arguments are not private: /proc/<pid>/cmdline is world-readable, so anything
+passed on the command line — an event's title, location or notes, a sync
+token, even the calendar id, which for most people is their email address — is
+readable by every local user for as long as the helper runs. Everything else
+the plugin stores is 0600 inside a 0700 directory. So the plugin passes none of
+it as arguments: events, insert, patch and delete each take a single "-" and
+read the whole request from stdin as one JSON object,
+
+  gcal events - <<< '{"calendarId": "...", "syncToken": "..."}'
+                    '{"calendarId": "...", "from": ISO, "to": ISO}'
+  gcal insert - <<< '{"calendarId": "...", "body": {...}}'
+  gcal patch  - <<< '{"calendarId": "...", "eventId": "...", "body": {...}}'
+  gcal delete - <<< '{"calendarId": "...", "eventId": "..."}'
+
+The argument forms above stay for use by hand, and in them a <json> body or a
+sync token may itself be "-" to read just that from stdin.
 
 The OAuth client comes from the first of these that has a client_id:
 
@@ -223,6 +233,34 @@ def read_body(value):
         return json.loads(text)
     except ValueError as exc:
         die("could not parse the event body (%s)" % exc)
+
+
+def read_request():
+    """The whole request for a "-" command, as one JSON object off stdin."""
+    try:
+        request = json.loads(sys.stdin.read())
+    except ValueError as exc:
+        die("could not parse the request (%s)" % exc)
+    if not isinstance(request, dict):
+        die("the request should be a JSON object")
+    calendar_id = request.get("calendarId")
+    if not isinstance(calendar_id, str) or not calendar_id:
+        die("the request names no calendarId")
+    return request
+
+
+def request_field(request, name):
+    value = request.get(name)
+    if not isinstance(value, str) or not value:
+        die("the request names no %s" % name)
+    return value
+
+
+def request_body(request):
+    body = request.get("body")
+    if not isinstance(body, dict):
+        die("the request carries no event body")
+    return body
 
 
 def read_json(path, default=None):
@@ -673,8 +711,7 @@ def events(calendar_id, sync_token=None, time_min=None, time_max=None):
             params.pop("timeMax", None)
             params.pop("orderBy", None)
             params.pop("syncToken", None)
-        payload = api("/calendars/%s/events" % urllib.parse.quote(calendar_id),
-                      params=params, budget=budget)
+        payload = api(event_path(calendar_id), params=params, budget=budget)
         if payload.get("_gone"):
             emit({"expired": True})
             return
@@ -684,6 +721,30 @@ def events(calendar_id, sync_token=None, time_min=None, time_max=None):
         if not page:
             break
     emit({"items": items, "syncToken": next_sync})
+
+
+def event_path(calendar_id, event_id=None):
+    # safe="" so an id holding a "/" stays one path segment.
+    path = "/calendars/%s/events" % urllib.parse.quote(calendar_id, safe="")
+    if event_id is not None:
+        path += "/" + urllib.parse.quote(event_id, safe="")
+    return path
+
+
+def run_request(command, request):
+    calendar_id = request["calendarId"]
+    if command == "events":
+        token = request.get("syncToken")
+        return events(calendar_id, token.strip() if isinstance(token, str) and token.strip()
+                      else None, request.get("from"), request.get("to"))
+    if command == "insert":
+        return emit(api(event_path(calendar_id), method="POST", body=request_body(request)))
+    event_id = request_field(request, "eventId")
+    if command == "patch":
+        return emit(api(event_path(calendar_id, event_id), method="PATCH",
+                        body=request_body(request)))
+    api(event_path(calendar_id, event_id), method="DELETE")
+    return emit({"ok": True})
 
 
 def main(argv):
@@ -716,6 +777,9 @@ def main(argv):
     if command == "calendars":
         return calendars()
 
+    if command in ("events", "insert", "patch", "delete") and argv[2:] == ["-"]:
+        return run_request(command, read_request())
+
     if command == "events":
         if len(argv) < 3:
             die("usage: gcal events <calendarId> [--sync-token T] [--from ISO] [--to ISO]")
@@ -730,21 +794,18 @@ def main(argv):
     if command == "insert":
         if len(argv) < 4:
             die("usage: gcal insert <calendarId> <json>|-")
-        return emit(api("/calendars/%s/events" % urllib.parse.quote(argv[2]),
-                        method="POST", body=read_body(argv[3])))
+        return emit(api(event_path(argv[2]), method="POST", body=read_body(argv[3])))
 
     if command == "patch":
         if len(argv) < 5:
             die("usage: gcal patch <calendarId> <eventId> <json>|-")
-        return emit(api("/calendars/%s/events/%s" % (urllib.parse.quote(argv[2]),
-                                                     urllib.parse.quote(argv[3])),
-                        method="PATCH", body=read_body(argv[4])))
+        return emit(api(event_path(argv[2], argv[3]), method="PATCH",
+                        body=read_body(argv[4])))
 
     if command == "delete":
         if len(argv) < 4:
             die("usage: gcal delete <calendarId> <eventId>")
-        api("/calendars/%s/events/%s" % (urllib.parse.quote(argv[2]),
-                                         urllib.parse.quote(argv[3])), method="DELETE")
+        api(event_path(argv[2], argv[3]), method="DELETE")
         return emit({"ok": True})
 
     die("unknown command: " + command)

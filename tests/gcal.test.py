@@ -453,5 +453,99 @@ class Pagination(unittest.TestCase):
         self.assertEqual(emitted["syncToken"], "tok")
 
 
+class Recorder(http.server.BaseHTTPRequestHandler):
+    """Records every request; answers with `Recorder.status` and `Recorder.reply`."""
+
+    seen = []
+    status = 200
+    reply = {}
+
+    def answer(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length else b""
+        Recorder.seen.append({
+            "method": self.command, "path": self.path,
+            "if_match": self.headers.get("If-Match"),
+            "body": json.loads(body) if body else None,
+        })
+        out = json.dumps(Recorder.reply).encode()
+        self.send_response(Recorder.status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(out)))
+        self.end_headers()
+        self.wfile.write(out)
+
+    do_GET = do_POST = do_PATCH = do_DELETE = answer  # noqa: N815
+
+    def log_message(self, *args):
+        pass
+
+
+class Requests(unittest.TestCase):
+    """The "-" forms the plugin uses: everything on stdin, nothing in argv."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server = socketserver.TCPServer(("127.0.0.1", 0), Recorder)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.api, cls.token = gcal.API, gcal.access_token
+        gcal.API = "http://127.0.0.1:%d" % cls.server.server_address[1]
+        gcal.access_token = lambda force=False: "test-token"
+
+    @classmethod
+    def tearDownClass(cls):
+        gcal.API, gcal.access_token = cls.api, cls.token
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def setUp(self):
+        Recorder.seen, Recorder.status, Recorder.reply = [], 200, {}
+
+    def run_gcal(self, command, request):
+        saved = sys.stdin
+        sys.stdin = io.StringIO(json.dumps(request))
+        try:
+            return refusal(lambda: gcal.main(["gcal", command, "-"]))
+        finally:
+            sys.stdin = saved
+
+    def test_events_takes_the_calendar_and_token_off_stdin(self):
+        Recorder.reply = {"items": [], "nextSyncToken": "next"}
+        self.run_gcal("events", {"calendarId": "me@example.com", "syncToken": "tok"})
+        path = Recorder.seen[0]["path"]
+        self.assertTrue(path.startswith("/calendars/me%40example.com/events?"))
+        self.assertIn("syncToken=tok", path)
+
+    def test_events_takes_a_window_when_there_is_no_token(self):
+        Recorder.reply = {"items": []}
+        self.run_gcal("events", {"calendarId": "c", "from": "2026-01-01T00:00:00Z",
+                                 "to": "2027-01-01T00:00:00Z"})
+        self.assertIn("timeMin=2026-01-01", Recorder.seen[0]["path"])
+
+    def test_insert_patch_and_delete(self):
+        self.run_gcal("insert", {"calendarId": "c", "body": {"summary": "Lunch"}})
+        self.run_gcal("patch", {"calendarId": "c", "eventId": "e1", "body": {"summary": "Tea"}})
+        self.run_gcal("delete", {"calendarId": "c", "eventId": "e1"})
+        self.assertEqual([(r["method"], r["path"]) for r in Recorder.seen], [
+            ("POST", "/calendars/c/events"),
+            ("PATCH", "/calendars/c/events/e1"),
+            ("DELETE", "/calendars/c/events/e1"),
+        ])
+        self.assertEqual(Recorder.seen[0]["body"], {"summary": "Lunch"})
+        self.assertEqual(Recorder.seen[1]["body"], {"summary": "Tea"})
+
+    def test_an_id_with_a_slash_stays_one_segment(self):
+        self.run_gcal("delete", {"calendarId": "a/../b", "eventId": "e"})
+        self.assertEqual(Recorder.seen[0]["path"], "/calendars/a%2F..%2Fb/events/e")
+
+    def test_a_malformed_request_is_refused_before_anything_is_sent(self):
+        for request in ({}, {"calendarId": ""}, {"calendarId": "c"},
+                        {"calendarId": "c", "eventId": "e", "body": "not an object"}):
+            code, payload = self.run_gcal("patch", request)
+            self.assertNotEqual(code, 0)
+            self.assertIn("error", payload)
+        self.assertEqual(Recorder.seen, [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

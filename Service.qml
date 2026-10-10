@@ -525,7 +525,7 @@ Item {
   property string syncError: ""
   property double lastSynced: 0
   property var syncQueue: []
-  // The sync token for the pull in flight, handed over stdin once it starts.
+  // The request for the pull in flight, handed over stdin once it starts.
   property string syncStdin: ""
   property var googleState: ({ client: false, authorized: false })
   property var calendarList: []
@@ -590,13 +590,14 @@ Item {
     var job = syncQueue[0]
     var entry = remote[job.id]
     var token = job.full ? "" : (entry ? String(entry.syncToken || "") : "")
-    var args = [gcalBin, "events", job.calendarId]
-    // Passed over stdin, like the write bodies: opaque, but it is per-calendar
-    // state and there is no reason for it to sit in a world-readable argv.
-    if (token !== "") args = args.concat(["--sync-token", "-"])
-    else args = args.concat(["--from", syncFromISO + "T00:00:00Z", "--to", syncToISO + "T00:00:00Z"])
-    syncStdin = token
-    syncProc.command = args
+    // The whole request goes over stdin, never argv, which every local user can
+    // read: the sync token is per-calendar state, and the calendar id is, for
+    // most people, their email address. See bin/gcal's docstring.
+    var request = { calendarId: job.calendarId }
+    if (token !== "") request.syncToken = token
+    else { request.from = syncFromISO + "T00:00:00Z"; request.to = syncToISO + "T00:00:00Z" }
+    syncStdin = JSON.stringify(request)
+    syncProc.command = [gcalBin, "events", "-"]
     syncProc.stdinEnabled = true
     syncProc.running = false
     syncProc.running = true
@@ -705,16 +706,16 @@ Item {
     var source = sourceById(sourceId)
     if (!source || source.kind !== "google") return "unknown calendar"
     if (source.writable === false) return "that calendar is read-only"
-    var body = JSON.stringify(Model.toGoogleEvent(event))
-    // "-" tells bin/gcal to read the body from stdin. The body carries the title,
-    // location and notes, and a process's arguments are world-readable through
-    // /proc/<pid>/cmdline for as long as it runs — which would put private event
-    // content in front of every local user, while everything this plugin stores
-    // on disk is 0600 in a 0700 directory. stdin keeps the two consistent.
-    var command = event.remoteId !== ""
-      ? [gcalBin, "patch", source.calendarId, event.remoteId, "-"]
-      : [gcalBin, "insert", source.calendarId, "-"]
-    queueWrite({ command: command, stdin: body,
+    // "-" tells bin/gcal to read the whole request from stdin. It carries the
+    // title, location and notes, and the calendar id — usually an email
+    // address — and a process's arguments are world-readable through
+    // /proc/<pid>/cmdline for as long as it runs. That would put private event
+    // content in front of every local user, while everything this plugin
+    // stores on disk is 0600 in a 0700 directory. stdin keeps the two consistent.
+    var request = { calendarId: source.calendarId, body: Model.toGoogleEvent(event) }
+    if (event.remoteId !== "") request.eventId = event.remoteId
+    queueWrite({ command: [gcalBin, event.remoteId !== "" ? "patch" : "insert", "-"],
+                 stdin: JSON.stringify(request),
                  sourceId: source.id, calendarId: source.calendarId })
     return ""
   }
@@ -724,7 +725,8 @@ Item {
     if (!source || source.kind !== "google") return "unknown calendar"
     if (source.writable === false) return "that calendar is read-only"
     queueWrite({
-      command: [gcalBin, "delete", source.calendarId, event.remoteId],
+      command: [gcalBin, "delete", "-"],
+      stdin: JSON.stringify({ calendarId: source.calendarId, eventId: event.remoteId }),
       sourceId: source.id, calendarId: source.calendarId
     })
     // Drop it locally at once; the follow-up sync confirms.
