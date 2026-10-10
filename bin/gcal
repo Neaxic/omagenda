@@ -29,7 +29,7 @@ read the whole request from stdin as one JSON object,
   gcal events - <<< '{"calendarId": "...", "syncToken": "..."}'
                     '{"calendarId": "...", "from": ISO, "to": ISO}'
   gcal insert - <<< '{"calendarId": "...", "body": {...}}'
-  gcal patch  - <<< '{"calendarId": "...", "eventId": "...", "body": {...}}'
+  gcal patch  - <<< '{"calendarId": "...", "eventId": "...", "etag": "...", "body": {...}}'
   gcal delete - <<< '{"calendarId": "...", "eventId": "..."}'
 
 The argument forms above stay for use by hand, and in them a <json> body or a
@@ -598,7 +598,8 @@ def access_token(force=False):
 
 # --- api -----------------------------------------------------------------------
 
-def api(path, method="GET", params=None, body=None, budget=None, retry=True):
+def api(path, method="GET", params=None, body=None, budget=None, retry=True,
+        if_match=None):
     url = API + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
@@ -607,6 +608,8 @@ def api(path, method="GET", params=None, body=None, budget=None, retry=True):
     request.add_header("Authorization", "Bearer " + access_token())
     if data:
         request.add_header("Content-Type", "application/json")
+    if if_match:
+        request.add_header("If-Match", if_match)
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
             raw = read_capped(response, MAX_RESPONSE_BYTES, budget).decode()
@@ -621,7 +624,7 @@ def api(path, method="GET", params=None, body=None, budget=None, retry=True):
             exc.close()
             access_token(force=True)
             return api(path, method=method, params=params, body=body,
-                       budget=budget, retry=False)
+                       budget=budget, retry=False, if_match=if_match)
         detail = exc.read(MAX_ERROR_BYTES).decode(errors="replace")
         try:
             parsed = json.loads(detail).get("error", {})
@@ -631,6 +634,12 @@ def api(path, method="GET", params=None, body=None, budget=None, retry=True):
         # drop it and take a full pass. It is normal, not a failure.
         if exc.code == 410:
             return {"_gone": True}
+        # If-Match did not: someone changed the event on Google after we last
+        # synced it, and writing ours over theirs would silently undo it.
+        if exc.code == 412:
+            die("That event was changed on Google since Omagenda last synced it, so "
+                "your edit was not saved. It is being re-synced — make the edit again.",
+                code=6, status=412, conflict=True)
         die("Google API %s: %s" % (exc.code, parsed.get("message", "")), code=6,
             status=exc.code)
     except urllib.error.URLError as exc:
@@ -741,8 +750,10 @@ def run_request(command, request):
         return emit(api(event_path(calendar_id), method="POST", body=request_body(request)))
     event_id = request_field(request, "eventId")
     if command == "patch":
+        etag = request.get("etag")
         return emit(api(event_path(calendar_id, event_id), method="PATCH",
-                        body=request_body(request)))
+                        body=request_body(request),
+                        if_match=etag if isinstance(etag, str) and etag else None))
     api(event_path(calendar_id, event_id), method="DELETE")
     return emit({"ok": True})
 

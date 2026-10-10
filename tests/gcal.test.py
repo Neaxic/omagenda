@@ -534,6 +534,20 @@ class Requests(unittest.TestCase):
         self.assertEqual(Recorder.seen[0]["body"], {"summary": "Lunch"})
         self.assertEqual(Recorder.seen[1]["body"], {"summary": "Tea"})
 
+    def test_a_patch_carries_the_etag_it_was_based_on(self):
+        self.run_gcal("patch", {"calendarId": "c", "eventId": "e1", "etag": '"v1"',
+                                "body": {"summary": "Tea"}})
+        self.assertEqual(Recorder.seen[0]["if_match"], '"v1"')
+
+    def test_a_patch_over_a_newer_version_is_reported_as_a_conflict(self):
+        Recorder.status = 412
+        Recorder.reply = {"error": {"code": 412, "message": "Precondition Failed"}}
+        code, payload = self.run_gcal("patch", {"calendarId": "c", "eventId": "e1",
+                                                "etag": '"v1"', "body": {}})
+        self.assertNotEqual(code, 0)
+        self.assertTrue(payload["conflict"])
+        self.assertIn("not saved", payload["error"])
+
     def test_an_id_with_a_slash_stays_one_segment(self):
         self.run_gcal("delete", {"calendarId": "a/../b", "eventId": "e"})
         self.assertEqual(Recorder.seen[0]["path"], "/calendars/a%2F..%2Fb/events/e")

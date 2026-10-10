@@ -476,6 +476,9 @@ Item {
       raw.until = existing.until
       if (existing.source === target) {
         raw.remoteId = existing.remoteId
+        // The version we last saw, so the patch is refused rather than written
+        // over a change someone else made on Google in the meantime.
+        raw.etag = existing.etag
         // The colour id Google has on it, so the patch can tell "unchanged"
         // from "cleared" — without it, picking "no colour" wrote nothing.
         raw.colorId = existing.colorId
@@ -675,7 +678,9 @@ Item {
     if (writeQueue.length === 0) { writing = false; return }
     writing = true
     var job = writeQueue[0]
-    writeStdin = String(job.stdin || "")
+    // Serialised now rather than when queued: an earlier write to the same
+    // event may have moved its etag on since.
+    writeStdin = job.request ? JSON.stringify(job.request) : ""
     writeProc.command = job.command
     // Reopened for every job: onStarted closes it again to give bin/gcal its EOF.
     writeProc.stdinEnabled = true
@@ -689,17 +694,55 @@ Item {
     if (job) {
       var reply = {}
       try { reply = JSON.parse(String(text || "{}")) } catch (e) { reply = {} }
-      if (reply.error) syncError = String(reply.error)
+      if (reply.error) {
+        syncError = String(reply.error)
+        // Refused because Google holds a newer version: fetch it, so the edit
+        // can be made again against what is really there.
+        if (reply.conflict && job.sourceId && sourceById(job.sourceId)) {
+          syncQueue = syncQueue.concat([{ id: job.sourceId, calendarId: job.calendarId, full: false }])
+          if (!syncing) { syncing = true; runSync() }
+        }
+      }
       // Nothing parseable came back, so the write did not happen: pulling the
       // calendar now would only confirm the event is still missing.
       else if (String(text || "").trim() === "") { /* onExited said why */ }
       else if (job.sourceId && sourceById(job.sourceId)) {
+        if (reply.etag && reply.id) adoptEtag(job.sourceId, String(reply.id), String(reply.etag))
         // Pull the source so the cache matches what Google now holds.
         syncQueue = syncQueue.concat([{ id: job.sourceId, calendarId: job.calendarId, full: false }])
         if (!syncing) { syncing = true; runSync() }
       }
     }
     runWrite()
+  }
+
+  // Google answered a write with the event's new etag. A second edit queued
+  // behind the first, or made before the follow-up sync lands, has to carry it,
+  // or it is refused as a conflict with our own write.
+  function adoptEtag(sourceId, remoteId, etag) {
+    for (var i = 0; i < writeQueue.length; i++) {
+      var request = writeQueue[i].request
+      if (writeQueue[i].sourceId === sourceId && request && request.eventId === remoteId
+          && request.etag !== undefined)
+        request.etag = etag
+    }
+    var entry = remote[sourceId]
+    if (!entry) return
+    var events = []
+    for (var j = 0; j < entry.events.length; j++) {
+      var event = entry.events[j]
+      if (event.remoteId === remoteId) {
+        var copy = {}
+        for (var key in event) copy[key] = event[key]
+        copy.etag = etag
+        event = copy
+      }
+      events.push(event)
+    }
+    var next = {}
+    for (var id in remote) next[id] = remote[id]
+    next[sourceId] = { syncToken: entry.syncToken, events: events }
+    remote = next
   }
 
   function remoteSave(sourceId, event) {
@@ -713,9 +756,12 @@ Item {
     // content in front of every local user, while everything this plugin
     // stores on disk is 0600 in a 0700 directory. stdin keeps the two consistent.
     var request = { calendarId: source.calendarId, body: Model.toGoogleEvent(event) }
-    if (event.remoteId !== "") request.eventId = event.remoteId
+    if (event.remoteId !== "") {
+      request.eventId = event.remoteId
+      request.etag = String(event.etag || "")
+    }
     queueWrite({ command: [gcalBin, event.remoteId !== "" ? "patch" : "insert", "-"],
-                 stdin: JSON.stringify(request),
+                 request: request,
                  sourceId: source.id, calendarId: source.calendarId })
     return ""
   }
@@ -726,7 +772,7 @@ Item {
     if (source.writable === false) return "that calendar is read-only"
     queueWrite({
       command: [gcalBin, "delete", "-"],
-      stdin: JSON.stringify({ calendarId: source.calendarId, eventId: event.remoteId }),
+      request: { calendarId: source.calendarId, eventId: event.remoteId },
       sourceId: source.id, calendarId: source.calendarId
     })
     // Drop it locally at once; the follow-up sync confirms.
