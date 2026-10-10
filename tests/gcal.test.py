@@ -192,6 +192,30 @@ class ConfigDir(unittest.TestCase):
         gcal.write_private(gcal.TOKEN_FILE, {"refresh_token": "r"})
         self.assertEqual(self.mode(gcal.CONFIG_DIR), 0o700)
 
+    def test_concurrent_writers_never_collide(self):
+        # Several helpers can refresh the token at once. Each must land a
+        # whole file, and none may die on the other's temp file.
+        failures = []
+
+        def writer(n):
+            for _ in range(200):
+                try:
+                    gcal.write_private(gcal.TOKEN_FILE, {"refresh_token": "r" * 4000, "n": n})
+                except Exception as exc:  # noqa: BLE001 - any failure is the bug
+                    failures.append(exc)
+
+        threads = [threading.Thread(target=writer, args=(n,)) for n in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(failures, [])
+        with open(gcal.TOKEN_FILE, encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["refresh_token"], "r" * 4000)
+        self.assertEqual(self.mode(gcal.TOKEN_FILE), 0o600)
+        # Nothing left lying about next to it.
+        self.assertEqual(os.listdir(gcal.CONFIG_DIR), ["google-tokens.json"])
+
 
 class FakeGoogle(http.server.BaseHTTPRequestHandler):
     """Serves whatever `FakeGoogle.page` currently holds, forever.

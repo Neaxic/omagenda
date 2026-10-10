@@ -57,6 +57,7 @@ import secrets
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -238,14 +239,26 @@ def ensure_config_dir():
 
 def write_private(path, data):
     ensure_config_dir()
-    tmp = path + ".tmp"
-    # Create with 0600 from the start rather than chmod-ing after: the tokens
-    # must never exist, even briefly, as a world-readable file.
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2)
-        handle.write("\n")
-    os.replace(tmp, path)
+    # A temp file of its own for every write. The shell runs sync, write-back
+    # and status as separate helpers, any of which may refresh the token, and
+    # with one shared "<path>.tmp" two of them truncated and wrote the same
+    # inode: one died renaming a file the other had already moved, and the
+    # survivor could rename a mix of both into place — losing the refresh
+    # token. mkstemp creates the file 0600 from the start, so the tokens never
+    # exist, even briefly, as a world-readable file.
+    fd, tmp = tempfile.mkstemp(dir=CONFIG_DIR, prefix=os.path.basename(path) + ".",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+            handle.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def client_from_file(path):
