@@ -332,6 +332,60 @@ class Callback(unittest.TestCase):
         self.assertIn("&lt;script&gt;", body)
 
 
+class LoginLaunch(unittest.TestCase):
+    """What the browser is opened with. Argv is world-readable through /proc,
+    so the state, challenge and port must not appear in it."""
+
+    def setUp(self):
+        import tempfile
+        self.root = tempfile.mkdtemp()
+        self.saved = (gcal.CONFIG_DIR, gcal.TOKEN_FILE, gcal.subprocess.Popen,
+                      gcal.post_form, gcal.client_credentials, gcal.LOGIN_SECONDS)
+        gcal.LOGIN_SECONDS = 5
+        gcal.CONFIG_DIR = os.path.join(self.root, "omagenda")
+        gcal.TOKEN_FILE = os.path.join(gcal.CONFIG_DIR, "google-tokens.json")
+        gcal.client_credentials = lambda: ("the-client", None)
+        gcal.post_form = lambda url, fields: {"refresh_token": "r", "access_token": "a",
+                                              "expires_in": 3600, "scope": ""}
+        self.argv = []
+        self.page = ""
+
+    def tearDown(self):
+        import shutil
+        (gcal.CONFIG_DIR, gcal.TOKEN_FILE, gcal.subprocess.Popen,
+         gcal.post_form, gcal.client_credentials, gcal.LOGIN_SECONDS) = self.saved
+        shutil.rmtree(self.root)
+
+    def fake_browser(self, argv, **_):
+        # Stands in for xdg-open and the browser: read the page it was given,
+        # follow it to "Google", and come back to the loopback with a code.
+        import html as html_mod
+        import re
+        import urllib.request
+        self.argv = list(argv)
+        path = argv[-1]
+        self.mode = os.stat(path).st_mode & 0o777
+        with open(path, encoding="utf-8") as handle:
+            self.page = handle.read()
+        url = html_mod.unescape(re.search(r'url=([^"]+)"', self.page).group(1))
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        back = "%s/?code=c&state=%s" % (query["redirect_uri"][0], query["state"][0])
+        threading.Thread(target=lambda: urllib.request.urlopen(back, timeout=5).read(),
+                         daemon=True).start()
+
+    def test_the_authorisation_url_never_reaches_argv(self):
+        gcal.subprocess.Popen = self.fake_browser
+        gcal.do_login()
+        self.assertEqual(self.argv[0], "xdg-open")
+        joined = " ".join(self.argv)
+        for leak in ("state", "code_challenge", "127.0.0.1", "accounts.google.com"):
+            self.assertNotIn(leak, joined)
+        self.assertIn("code_challenge=", self.page)
+        self.assertEqual(self.mode, 0o600)
+        # Gone once the login is over; only the tokens remain.
+        self.assertEqual(os.listdir(gcal.CONFIG_DIR), ["google-tokens.json"])
+
+
 class FakeGoogle(http.server.BaseHTTPRequestHandler):
     """Serves whatever `FakeGoogle.page` currently holds, forever.
 

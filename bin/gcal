@@ -440,6 +440,28 @@ def wait_for_callback(server, seconds):
         server.handle_request()
 
 
+def write_launch_page(url):
+    """A private page that sends the browser on to `url`; returns its path.
+
+    The authorisation URL carries the login's `state`, PKCE challenge and
+    loopback port. Handed to xdg-open, it sits in that process's argv and then
+    the browser's, both readable through /proc by every account on the
+    machine — enough for another user to consent with their own Google account
+    and win the race to the loopback, so that this helper redeems their code
+    and the shell links their calendar. A path into the 0700 config directory
+    names nothing they can read.
+    """
+    ensure_config_dir()
+    fd, path = tempfile.mkstemp(dir=CONFIG_DIR, prefix="login.", suffix=".html")
+    target = html.escape(url, quote=True)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("<!doctype html><meta charset=utf-8>"
+                     "<meta http-equiv=refresh content=\"0;url=%s\">"
+                     "<title>Omagenda</title>"
+                     "<p><a href=\"%s\">Continue to Google</a></p>\n" % (target, target))
+    return path
+
+
 def do_login():
     client_id, client_secret = client_credentials()
     verifier, challenge = pkce_pair()
@@ -472,13 +494,20 @@ def do_login():
         # the plugin is malware halfway through.
         sys.stderr.write("If Google says it has not verified Omagenda, choose "
                          "Advanced → Go to Omagenda.\n")
+        page = write_launch_page(url)
         try:
-            subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-        except OSError:
-            pass
-
-        wait_for_callback(server, LOGIN_SECONDS)
+            try:
+                subprocess.Popen(["xdg-open", page], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+            except OSError:
+                pass
+            wait_for_callback(server, LOGIN_SECONDS)
+        finally:
+            # The browser has read it by the time Google sends it back here.
+            try:
+                os.remove(page)
+            except FileNotFoundError:
+                pass
 
     result = CallbackHandler.result
     if not result:
